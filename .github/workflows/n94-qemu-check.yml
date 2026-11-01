@@ -53,8 +53,8 @@ jobs:
       - name: Compile iPhone 4S objects
         run: |
           cd qemu_src
-          # Find exact meson/ninja targets for n94 and s5l8940 (intermediate targets require 'all')
-          TARGETS=$(ninja -C build -t targets all | grep -E "n94|s5l8940" | cut -d: -f1 | tr '\n' ' ')
+          # Find exact meson/ninja object targets for n94 and s5l8940
+          TARGETS=$(ninja -C build -t targets all | grep -E "libqemu-arm-softmmu\.a\.p/hw_arm_(n94|s5l8940).*\.c\.o" | cut -d: -f1 | tr '\n' ' ')
           echo "Discovered ninja targets: $TARGETS"
           ninja -C build $TARGETS
 

@@ -19,6 +19,7 @@
 #include "qemu/error-report.h"
 #include "target/arm/cpu.h"
 #include "hw/arm/boot.h"
+#include "system/system.h"
 #include "hw/arm/s5l8940_soc.h"
 
 #define TYPE_N94_MACHINE MACHINE_TYPE_NAME("n94")
@@ -179,7 +180,7 @@ static void n94_reset(void *opaque)
     env->regs[0] = s->bootargs_pa ? s->bootargs_pa : N94_BOOTARGS_PA;
 
     /* 4. CPSR = 0x000000D3 (Supervisor mode, IRQ/FIQ disabled, ARM state) */
-    cpsr_write(env, 0x000000D3, CPSR_ALL, CPSRWriteRaw);
+    cpsr_write(env, 0x000000D3, 0xffffffff, CPSRWriteRaw);
 
     /* 5. VBAR = 0x80000000 (Vector Base Address Register) */
     env->cp15.vbar_el[1] = S5L8940_RAM_BASE;
