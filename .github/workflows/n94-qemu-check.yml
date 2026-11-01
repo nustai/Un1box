@@ -32,8 +32,10 @@ jobs:
 
       - name: Register n94 in qemu_src/hw/arm/meson.build
         run: |
-          cat << 'EOF' >> qemu_src/hw/arm/meson.build
-
+          python3 - << 'PY'
+          with open('qemu_src/hw/arm/meson.build', 'r') as f:
+              content = f.read()
+          insertion = """
           # iPhone 4S (n94 / S5L8940)
           arm_ss.add(files(
             'n94_board.c',
@@ -43,7 +45,13 @@ jobs:
             's5l8940_aic.c',
             's5l8940_pmgr.c',
           ))
-          EOF
+          """
+          marker = "hw_arch += {'arm': arm_ss}"
+          assert marker in content, "hw_arch marker not found"
+          content = content.replace(marker, insertion + "\n" + marker)
+          with open('qemu_src/hw/arm/meson.build', 'w') as f:
+              f.write(content)
+          PY
 
       - name: Configure QEMU (arm-softmmu)
         run: |
