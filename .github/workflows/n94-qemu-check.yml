@@ -1,0 +1,62 @@
+name: N94 iPhone 4S QEMU Syntax & Object Verification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-n94-qemu:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout un1box repository
+        uses: actions/checkout@v4
+
+      - name: Install QEMU build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git ninja-build pkg-config python3-venv python3-pip \
+            libglib2.0-dev libpixman-1-dev flex bison
+
+      - name: Clone qemu-ios repository
+        run: |
+          git clone --depth 1 https://github.com/samhenrigold/qemu-ios.git qemu_src
+
+      - name: Copy n94 source files into qemu_src/hw/arm
+        run: |
+          cp -v ../hw/arm/n94_*.c qemu_src/hw/arm/ || cp -v hw/arm/n94_*.c qemu_src/hw/arm/
+          cp -v ../hw/arm/s5l8940_*.c qemu_src/hw/arm/ || cp -v hw/arm/s5l8940_*.c qemu_src/hw/arm/
+          cp -v ../hw/arm/s5l8940_soc.h qemu_src/hw/arm/ || cp -v hw/arm/s5l8940_soc.h qemu_src/hw/arm/
+
+      - name: Register n94 in qemu_src/hw/arm/meson.build
+        run: |
+          cat << 'EOF' >> qemu_src/hw/arm/meson.build
+
+          # iPhone 4S (n94 / S5L8940)
+          arm_ss.add(files(
+            'n94_board.c',
+            'n94_display.c',
+            'n94_uart.c',
+            's5l8940_soc.c',
+            's5l8940_aic.c',
+            's5l8940_pmgr.c',
+          ))
+          EOF
+
+      - name: Configure QEMU (arm-softmmu)
+        run: |
+          cd qemu_src
+          ./configure --target-list=arm-softmmu --disable-werror
+
+      - name: Compile iPhone 4S objects
+        run: |
+          cd qemu_src
+          ninja -C build \
+            hw/arm/n94_display.c.o \
+            hw/arm/n94_uart.c.o \
+            hw/arm/s5l8940_soc.c.o \
+            hw/arm/s5l8940_aic.c.o \
+            hw/arm/s5l8940_pmgr.c.o \
+            hw/arm/n94_board.c.o
