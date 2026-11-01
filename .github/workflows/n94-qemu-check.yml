@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq git ninja-build pkg-config python3-venv python3-pip \
-            libglib2.0-dev libpixman-1-dev flex bison
+            libglib2.0-dev libpixman-1-dev libssl-dev flex bison
 
       - name: Clone qemu-ios repository
         run: |
@@ -48,7 +48,7 @@ jobs:
       - name: Configure QEMU (arm-softmmu)
         run: |
           cd qemu_src
-          ./configure --target-list=arm-softmmu --disable-werror
+          ./configure --target-list=arm-softmmu --disable-werror --extra-ldflags="-lcrypto"
 
       - name: Compile iPhone 4S objects
         run: |
