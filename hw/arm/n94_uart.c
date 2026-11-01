@@ -159,9 +159,8 @@ static void n94_uart_init(Object *obj)
     sysbus_init_irq(dev, &s->irq);
 }
 
-static Property n94_uart_properties[] = {
+static const Property n94_uart_properties[] = {
     DEFINE_PROP_CHR("chardev", N94UARTState, chr),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void n94_uart_class_init(ObjectClass *klass, const void *data)
