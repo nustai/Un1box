@@ -15,7 +15,7 @@
 #include "system/address-spaces.h"
 #include "system/reset.h"
 #include "exec/cpu-common.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "qemu/error-report.h"
 #include "target/arm/cpu.h"
 #include "hw/arm/boot.h"

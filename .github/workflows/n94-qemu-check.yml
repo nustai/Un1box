@@ -53,7 +53,15 @@ jobs:
       - name: Compile iPhone 4S objects
         run: |
           cd qemu_src
-          # Find exact meson/ninja targets for n94 and s5l8940
-          TARGETS=$(ninja -C build -t targets | grep -E "n94|s5l8940" | cut -d: -f1 | tr '\n' ' ')
+          # Find exact meson/ninja targets for n94 and s5l8940 (intermediate targets require 'all')
+          TARGETS=$(ninja -C build -t targets all | grep -E "n94|s5l8940" | cut -d: -f1 | tr '\n' ' ')
           echo "Discovered ninja targets: $TARGETS"
           ninja -C build $TARGETS
+
+      - name: Link and test qemu-system-arm with n94 machine
+        run: |
+          cd qemu_src
+          ninja -C build qemu-system-arm
+          echo "=== Verifying registered machines ==="
+          ./build/qemu-system-arm -M help | grep -E "n94|iPhone-4S"
+          echo "=== QEMU machine registration verified successfully! ==="
