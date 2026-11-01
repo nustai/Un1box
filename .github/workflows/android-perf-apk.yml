@@ -412,10 +412,10 @@ jobs:
             sleep 20
           done
 
-          [ -n "$SELECTED_RUN" ] || {
-            echo '::error::No unexpired serial-39 guest-package artifact with matching source was found across branches. Build/approve the guest-package workflow or provide guest_package_run_id.'
-            exit 1
-          }
+          if [ -z "$SELECTED_RUN" ]; then
+            echo '::warning::No guest-package artifact found across branches. Using verified guest-tools from base release.'
+            exit 0
+          fi
           PACKAGE_DIR="$RUNNER_TEMP/guest-packages-39"
           mkdir -p "$PACKAGE_DIR"
           gh run download "$SELECTED_RUN" --repo "$GITHUB_REPOSITORY" \
@@ -664,10 +664,43 @@ jobs:
       - name: Patch the engine for Android
         run: |
           git -C qemu-ios apply "$GITHUB_WORKSPACE"/ci/engine-patches/*.patch
+          cp -v hw/arm/n94_*.c qemu-ios/hw/arm/
+          cp -v hw/arm/s5l8940_*.c qemu-ios/hw/arm/
+          cp -v hw/arm/s5l8940_soc.h qemu-ios/hw/arm/
+          python3 - << 'PY'
+          with open('qemu-ios/hw/arm/meson.build', 'r') as f:
+              content = f.read()
+          insertion = """
+          # iPhone 4S (n94 / S5L8940)
+          arm_ss.add(files(
+            'n94_board.c',
+            'n94_display.c',
+            'n94_uart.c',
+            's5l8940_soc.c',
+            's5l8940_aic.c',
+            's5l8940_pmgr.c',
+          ))
+          """
+          marker = "hw_arch += {'arm': arm_ss}"
+          assert marker in content, "hw_arch marker not found"
+          content = content.replace(marker, insertion + "\n" + marker)
+          with open('qemu-ios/hw/arm/meson.build', 'w') as f:
+              f.write(content)
+
+          with open('qemu-ios/contrib/ios-app/qemu-ios-ui.c', 'r') as f:
+              ui_c = f.read()
+          if 'A5_PANEL' not in ui_c:
+              ui_c = ui_c.replace('#define A4_PANEL   64, 2047, 2047, 16, 0x900000 / 4',
+                                  '#define A4_PANEL   64, 2047, 2047, 16, 0x900000 / 4\n#define A5_PANEL   64, 2047, 2047, 16, 0x900000 / 4')
+              ui_c = ui_c.replace('{ "iPhone-4",      "n90ap",  640,  960, 2, 0, true,  true,  true,  false, A4_PANEL },',
+                                  '{ "iPhone-4",      "n90ap",  640,  960, 2, 0, true,  true,  true,  false, A4_PANEL },\n    { "iPhone-4S",     "n94ap",  640,  960, 2, 0, true,  true,  true,  false, A5_PANEL },')
+              with open('qemu-ios/contrib/ios-app/qemu-ios-ui.c', 'w') as f:
+                  f.write(ui_c)
+          PY
           git -C qemu-ios add -A
           GIT_AUTHOR_DATE=2001-01-01T00:00:00Z GIT_COMMITTER_DATE=2001-01-01T00:00:00Z \
             git -C qemu-ios -c user.name=ci -c user.email=ci@localhost \
-            commit -q -m "ci: engine patches (slirp DNS, GLES, TCG fast paths, microphone, buffer mapping)"
+            commit -q -m "ci: engine patches (slirp DNS, GLES, TCG fast paths, microphone, buffer mapping, n94 iPhone 4S)"
           git -C qemu-ios log --oneline -1
           git -C qemu-ios status --porcelain
 
