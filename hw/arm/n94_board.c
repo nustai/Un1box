@@ -20,6 +20,7 @@
 #include "target/arm/cpu.h"
 #include "hw/arm/boot.h"
 #include "system/system.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/arm/s5l8940_soc.h"
 
 #define TYPE_N94_MACHINE MACHINE_TYPE_NAME("n94")
@@ -362,12 +363,14 @@ static const TypeInfo n94_machines_info[] = {
     {
         .name          = TYPE_N94_MACHINE,
         .parent        = TYPE_MACHINE,
+        .interfaces    = arm_machine_interfaces,
         .instance_size = sizeof(N94MachineState),
         .class_init    = n94_class_init,
     },
     {
         .name          = TYPE_IPHONE4S_MACHINE,
         .parent        = TYPE_MACHINE,
+        .interfaces    = arm_machine_interfaces,
         .instance_size = sizeof(N94MachineState),
         .class_init    = n94_class_init,
     },
