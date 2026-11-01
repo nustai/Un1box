@@ -26,9 +26,9 @@ jobs:
 
       - name: Copy n94 source files into qemu_src/hw/arm
         run: |
-          cp -v ../hw/arm/n94_*.c qemu_src/hw/arm/ || cp -v hw/arm/n94_*.c qemu_src/hw/arm/
-          cp -v ../hw/arm/s5l8940_*.c qemu_src/hw/arm/ || cp -v hw/arm/s5l8940_*.c qemu_src/hw/arm/
-          cp -v ../hw/arm/s5l8940_soc.h qemu_src/hw/arm/ || cp -v hw/arm/s5l8940_soc.h qemu_src/hw/arm/
+          cp -v hw/arm/n94_*.c qemu_src/hw/arm/
+          cp -v hw/arm/s5l8940_*.c qemu_src/hw/arm/
+          cp -v hw/arm/s5l8940_soc.h qemu_src/hw/arm/
 
       - name: Register n94 in qemu_src/hw/arm/meson.build
         run: |
@@ -53,10 +53,7 @@ jobs:
       - name: Compile iPhone 4S objects
         run: |
           cd qemu_src
-          ninja -C build \
-            hw/arm/n94_display.c.o \
-            hw/arm/n94_uart.c.o \
-            hw/arm/s5l8940_soc.c.o \
-            hw/arm/s5l8940_aic.c.o \
-            hw/arm/s5l8940_pmgr.c.o \
-            hw/arm/n94_board.c.o
+          # Find exact meson/ninja targets for n94 and s5l8940
+          TARGETS=$(ninja -C build -t targets | grep -E "n94|s5l8940" | cut -d: -f1 | tr '\n' ' ')
+          echo "Discovered ninja targets: $TARGETS"
+          ninja -C build $TARGETS
