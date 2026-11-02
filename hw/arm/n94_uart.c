@@ -144,7 +144,7 @@ static const MemoryRegionOps n94_uart_ops = {
     .write = n94_uart_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
     .valid = {
-        .min_access_size = 4,
+        .min_access_size = 1,
         .max_access_size = 4,
     },
 };

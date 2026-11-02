@@ -11,13 +11,13 @@ import time
 
 
 def bundle():
-    # ARM instructions emit a marker through the n94 UART1 MMIO transmit register.
+    # UART0 is boot-console in the stock n94 DeviceTree.
     words = [0]
     for byte in b"N94_SMOKE\n":
         words += [0xE3A01000 | byte, 0xE5821000]  # mov r1, #byte; str r1, [r2]
     words += [0xEAFFFFFE]
     words[0] = 0xE59F2000 | (len(words) * 4 - 8)  # ldr r2, [pc, #literal]
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<I", 0x32600020)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<I", 0x32500020)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 
@@ -66,7 +66,7 @@ def execute(binary, directory, machine):
                     deadline = time.monotonic() + 10
                     while serial.read_bytes().count(b"N94_SMOKE\n") < attempt + 1:
                         if process.poll() is not None or time.monotonic() > deadline:
-                            raise AssertionError("ARM payload did not reach UART1")
+                            raise AssertionError("ARM payload did not reach UART0 boot console")
                         time.sleep(0.05)
                     if attempt == 0:
                         qmp("system_reset")

@@ -275,9 +275,12 @@ static void n94_init(MachineState *machine)
     /* 2. Initialize S5L8940 SoC */
     object_initialize_child(OBJECT(machine), "soc", &s->soc, TYPE_S5L8940_SOC);
 
-    /* Connect UART1 serial console to chardev */
+    /* /arm-io/uart0 carries boot-console in the actual n94 DeviceTree. */
     if (serial_hd(0)) {
-        qdev_prop_set_chr(DEVICE(s->soc.uart1), "chardev", serial_hd(0));
+        qdev_prop_set_chr(s->soc.uart0, "chardev", serial_hd(0));
+    }
+    if (serial_hd(1)) {
+        qdev_prop_set_chr(s->soc.uart1, "chardev", serial_hd(1));
     }
 
     /* Realize SoC */

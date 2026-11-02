@@ -30,7 +30,9 @@ static void s5l8940_soc_init(Object *obj)
     s->aic = qdev_new("s5l8940-aic");
     /* PMGR Power Manager */
     s->pmgr = qdev_new("s5l8940-pmgr");
-    /* UART1 Debug Console */
+    /* UART0 is marked boot-console in the stock n94 DeviceTree. */
+    s->uart0 = qdev_new("n94-uart");
+    /* UART1 is a separate peripheral, not the selected boot console. */
     s->uart1 = qdev_new("n94-uart");
     /* Display CLCD (640x960 Retina) */
     s->clcd = qdev_new("n94-display");
@@ -72,7 +74,10 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pmgr), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
 
-    /* 3. Realize and map UART1 (Serial debug console) */
+    /* 3. Realize the boot console (UART0) and the separate UART1. */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart0), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->uart0), 0, S5L8940_UART0_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->uart0), 0, qdev_get_gpio_in(s->aic, 0x15));
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart1), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->uart1), 0, S5L8940_UART1_DEBUG_BASE);
     /* DeviceTree specifies interrupt 0x16 for UART1 */
