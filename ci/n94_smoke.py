@@ -70,9 +70,12 @@ def execute(binary, directory, machine):
                         time.sleep(0.05)
                     if attempt == 0:
                         qmp("system_reset")
-                qmp("quit")
+                # This fork closes QMP during quit before a reply is guaranteed.
+                stream.write(b'{"execute":"quit"}\n')
             process.wait(timeout=10)
-            assert process.returncode == 0
+            if process.returncode != 0:
+                errors.seek(0)
+                raise AssertionError(f"QEMU exit {process.returncode}: {errors.read()}")
             print(f"PASS {machine}: realized two CPUs, ARM UART marker, reset and re-execution", flush=True)
         finally:
             if process.poll() is None:
