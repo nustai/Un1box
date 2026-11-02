@@ -8,7 +8,7 @@ import subprocess
 import time
 
 
-def probe(binary, bundle, output):
+def probe(binary, bundle, output, seconds):
     output.mkdir(parents=True, exist_ok=True)
     serial, log = output / "uart.log", output / "qemu.log"
     with socket.socket() as reservation:
@@ -56,13 +56,16 @@ def probe(binary, bundle, output):
 
             qmp("qmp_capabilities")
             qmp("cont")
-            for sample in range(8):
-                time.sleep(0.25 if sample == 0 else 1)
+            started = time.monotonic()
+            for sample in range(max(1, int(seconds / 2))):
+                time.sleep(0.25 if sample == 0 else 2)
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
-                snapshots.append({"sample": sample, "registers": registers})
+                snapshots.append({"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers})
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                 if log.exists() and log.stat().st_size > 8 << 20:
+                    break
+                if serial.exists() and b"panic(" in serial.read_bytes():
                     break
                 qmp("cont")
             qmp("stop")
@@ -101,10 +104,11 @@ def main():
     parser.add_argument("binary", type=pathlib.Path)
     parser.add_argument("images", type=pathlib.Path)
     parser.add_argument("output", type=pathlib.Path)
+    parser.add_argument("--seconds", type=int, default=60)
     args = parser.parse_args()
     for version in (2, 3):
         probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
-              args.output / f"bootargs-v{version}")
+              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 180))
 
 
 if __name__ == "__main__":
