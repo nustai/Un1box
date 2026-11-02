@@ -185,6 +185,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None):
     cpu.set("timebase-frequency", u32(24_000_000))
     framebuffer, framebuffer_size = 0x8fd00000, align(640 * 960 * 4)
     dt.at("vram").set("reg", u32(framebuffer, framebuffer_size))
+    # The stock pram/reg is an unfilled bootloader placeholder. XNU reads it
+    # at 0x800c06c4 and immediately dereferences the resulting mapping. A zero
+    # address/length caused the observed FAR=0xc0001000 panic at 0x800c073a.
+    # Reserve an emulator-owned crash-log buffer in guest RAM, not fake MMIO.
+    pram_pa, pram_size = RAM + RAM_SIZE - (1 << 20), 1 << 20
+    dt.at("pram").set("reg", u32(pram_pa, pram_size))
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
     if ramdisk is not None:
         if len(ramdisk) > 64 << 20 or ramdisk[1024:1026] not in (b"H+", b"HX"):
@@ -197,6 +203,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None):
     if ramdisk is not None:
         memory_map.append(("RAMDisk", rd_pa, len(ramdisk)))
     memory_map += [("DeviceTree", dt_pa, len(dt.encode())), ("BootArgs", args_pa, 4096)]
+    memory_map.append(("PRAM", pram_pa, pram_size))
     node = dt.at("chosen/memory-map")
     slots = [k for k in node.props if k.startswith("MemoryMapReserved-")]
     if len(slots) < len(memory_map):
@@ -231,6 +238,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None):
               "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
               "root_filesystem": "restore-ramdisk" if ramdisk is not None else "absent",
               "firmware_property_flags_cleared": cleared_flags,
+              "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
               "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
               "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
     (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")

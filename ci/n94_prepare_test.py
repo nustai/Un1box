@@ -35,7 +35,7 @@ class Preparation(unittest.TestCase):
         for name in ("marketing-hardware-behavior", "marketing-software-behavior"):
             chosen.props[name] = (b"placeholder\0", 0x80000000)
         root = node("device-tree", [node("memory", reg=bytes(8)), chosen,
-                                     node("cpus", [node("cpu0")]), node("vram", reg=bytes(8))])
+                                     node("cpus", [node("cpu0")]), node("vram", reg=bytes(8)), node("pram", reg=bytes(8))])
         raw = root.encode()
         with self.assertRaisesRegex(ValueError, "escaped"):
             kernel_walk(raw)
@@ -61,6 +61,11 @@ class Preparation(unittest.TestCase):
                 self.assertEqual(top % 16384, 0)
                 cooked = image[dt - base:dt - base + size]
                 self.assertEqual(kernel_walk(cooked), size)
+                tree, _ = Node.read(cooked)
+                pram_pa, pram_size = struct.unpack("<II", tree.at("pram").props["reg"][0])
+                self.assertGreaterEqual(pram_pa, top)
+                self.assertGreater(pram_size, 0)
+                self.assertLessEqual(pram_pa + pram_size, base + (512 << 20))
                 report = json.loads((output / f"n94-v{version}-layout.json").read_text())
                 self.assertEqual(report["firmware_property_flags_cleared"], 2)
 
