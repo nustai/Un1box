@@ -13,6 +13,7 @@
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "system/address-spaces.h"
+#include "system/system.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/s5l8940_soc.h"
 #include "target/arm/cpu.h"
