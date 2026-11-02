@@ -167,7 +167,7 @@ def macho(data):
     return segments, entry
 
 
-def prepare(kernel, raw_dt, version, output):
+def prepare(kernel, raw_dt, version, output, ramdisk=None):
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -185,10 +185,17 @@ def prepare(kernel, raw_dt, version, output):
     cpu.set("timebase-frequency", u32(24_000_000))
     framebuffer, framebuffer_size = 0x8fd00000, align(640 * 960 * 4)
     dt.at("vram").set("reg", u32(framebuffer, framebuffer_size))
-    dt_pa = align(max(address + memory for _, address, memory, _, _ in segments))
+    rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
+    if ramdisk is not None:
+        if len(ramdisk) > 64 << 20 or ramdisk[1024:1026] not in (b"H+", b"HX"):
+            raise ValueError("diagnostic ramdisk must be a raw HFS+ volume below 64 MiB")
+        chosen.set("root-matching", b"\0")
+    dt_pa = rd_pa + (align(len(ramdisk)) if ramdisk is not None else 0)
     args_pa = dt_pa + align(len(dt.encode()))
     top = align(args_pa + 4096, 16384)
     memory_map = [("Kernel-" + name, address, memory) for name, address, memory, _, _ in segments]
+    if ramdisk is not None:
+        memory_map.append(("RAMDisk", rd_pa, len(ramdisk)))
     memory_map += [("DeviceTree", dt_pa, len(dt.encode())), ("BootArgs", args_pa, 4096)]
     node = dt.at("chosen/memory-map")
     slots = [k for k in node.props if k.startswith("MemoryMapReserved-")]
@@ -201,6 +208,8 @@ def prepare(kernel, raw_dt, version, output):
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
     command = b"-v serial=3 debug=0x14e keepsyms=1"
+    if ramdisk is not None:
+        command += b" rd=md0"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)
@@ -211,6 +220,8 @@ def prepare(kernel, raw_dt, version, output):
     image = bytearray(top - RAM)
     for _, address, _, fileoff, filesize in segments:
         image[address - RAM:address - RAM + filesize] = kernel[fileoff:fileoff + filesize]
+    if ramdisk is not None:
+        image[rd_pa - RAM:rd_pa - RAM + len(ramdisk)] = ramdisk
     image[dt_pa - RAM:dt_pa - RAM + len(cooked_dt)] = cooked_dt
     image[args_pa - RAM:args_pa - RAM + len(args)] = args
     output.mkdir(parents=True, exist_ok=True)
@@ -218,7 +229,8 @@ def prepare(kernel, raw_dt, version, output):
     (output / "n94-diagnostic-dt.bin").write_bytes(cooked_dt)
     report = {"diagnostic_only": True, "kernel_entry": hex(entry), "bootargs_version_candidate": version,
               "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
-              "root_filesystem": "absent", "firmware_property_flags_cleared": cleared_flags,
+              "root_filesystem": "restore-ramdisk" if ramdisk is not None else "absent",
+              "firmware_property_flags_cleared": cleared_flags,
               "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
               "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
     (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -230,8 +242,11 @@ def main():
     parser.add_argument("--ipsw", type=pathlib.Path)
     parser.add_argument("--kernel", type=pathlib.Path)
     parser.add_argument("--dt", type=pathlib.Path)
+    parser.add_argument("--ramdisk", type=pathlib.Path)
+    parser.add_argument("--restore-ramdisk", action="store_true")
     parser.add_argument("--output", required=True, type=pathlib.Path)
     options = parser.parse_args()
+    ramdisk = options.ramdisk.read_bytes() if options.ramdisk else None
     if options.ipsw:
         digest = hashlib.sha256()
         with options.ipsw.open("rb") as stream:
@@ -244,12 +259,20 @@ def main():
                 "a90b2e894db15c583f0146e4762f667ae5a54002e357279f2688dac0695849b7", "23b0d1ab552c95b2d920f3847ecff985"))
             dt = decrypt_img3(archive.read("Firmware/all_flash/all_flash.n94ap.production/DeviceTree.n94ap.img3"),
                 "0df08ae913ef8109fe9d7c9b69c29836dadb5d74dbfe7d5ae12c0679cac33ed5", "ed62c1631514e485fbd2db0b616f1d98")
+            if options.restore_ramdisk:
+                import plistlib
+                manifest = plistlib.loads(archive.read("BuildManifest.plist"))
+                identity = next(i for i in manifest["BuildIdentities"]
+                                if i["Info"]["DeviceClass"] == "n94ap" and i["Info"]["RestoreBehavior"] == "Erase")
+                name = identity["Manifest"]["RestoreRamDisk"]["Info"]["Path"]
+                ramdisk = decrypt_img3(archive.read(name),
+                    "06d072f749625566c525fb118cb691da2121227777ce7f1244822530a590ce99", "0d4237e65a21e7177c40dd1f1e435f1c")
     elif options.kernel and options.dt:
         kernel, dt = options.kernel.read_bytes(), options.dt.read_bytes()
     else:
         parser.error("provide --ipsw or both --kernel and --dt")
     for version in (2, 3):
-        prepare(kernel, dt, version, options.output)
+        prepare(kernel, dt, version, options.output, ramdisk)
 
 
 if __name__ == "__main__":

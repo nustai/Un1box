@@ -6,6 +6,10 @@ on:
       engine_run_id:
         description: Successful QEMU verification run containing n94-host-qemu
         required: true
+      restore_ramdisk:
+        description: Add the actual restore HFS ramdisk as md0 (recovery userspace, not SpringBoard)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,10 +40,17 @@ jobs:
           PY
           ./n94-host/qemu-system-arm -M help | grep iPhone-4S
       - name: Prepare actual stock kernel inputs
+        env:
+          RESTORE_RAMDISK: ${{ inputs.restore_ramdisk }}
         run: |
           curl --fail --location --retry 3 --max-time 600 \
             'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
-          python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
+          python3 ci/n94_prepare_test.py
+          if [ "$RESTORE_RAMDISK" = true ]; then
+            python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --restore-ramdisk --output n94-images
+          else
+            python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
+          fi
       - name: Capture actual guest execution
         timeout-minutes: 3
         run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces
