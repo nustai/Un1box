@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import secrets
 import struct
 import zipfile
 import zlib
@@ -167,7 +168,7 @@ def macho(data):
     return segments, entry
 
 
-def prepare(kernel, raw_dt, version, output, ramdisk=None):
+def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -175,6 +176,10 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None):
     cleared_flags = dt.clear_firmware_flags()
     dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
     chosen = dt.at("chosen")
+    entropy = secrets.token_bytes(64) if entropy is None else entropy
+    if len(entropy) != 64 or not any(entropy):
+        raise ValueError("XNU requires 64 bytes of nonzero boot entropy")
+    chosen.set("random-seed", entropy)
     for key, value in {"board-id": 8, "chip-id": 0x8940, "display-scale": 2,
                        "display-rotation": 0, "debug-enabled": 1}.items():
         chosen.set(key, u32(value))
@@ -279,8 +284,9 @@ def main():
         kernel, dt = options.kernel.read_bytes(), options.dt.read_bytes()
     else:
         parser.error("provide --ipsw or both --kernel and --dt")
+    entropy = secrets.token_bytes(64)
     for version in (2, 3):
-        prepare(kernel, dt, version, options.output, ramdisk)
+        prepare(kernel, dt, version, options.output, ramdisk, entropy)
 
 
 if __name__ == "__main__":

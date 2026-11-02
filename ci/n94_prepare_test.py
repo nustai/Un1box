@@ -62,6 +62,9 @@ class Preparation(unittest.TestCase):
                 cooked = image[dt - base:dt - base + size]
                 self.assertEqual(kernel_walk(cooked), size)
                 tree, _ = Node.read(cooked)
+                seed = tree.at("chosen").props["random-seed"][0]
+                self.assertEqual(len(seed), 64)
+                self.assertTrue(any(seed))
                 pram_pa, pram_size = struct.unpack("<II", tree.at("pram").props["reg"][0])
                 self.assertGreaterEqual(pram_pa, top)
                 self.assertGreater(pram_size, 0)
