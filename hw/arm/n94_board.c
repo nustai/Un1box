@@ -319,7 +319,8 @@ static void n94_init(MachineState *machine)
         ba.virtBase = S5L8940_RAM_BASE;
         ba.physBase = S5L8940_RAM_BASE;
         ba.memSize = S5L8940_RAM_SIZE;
-        ba.topOfKernelData = (N94_DEVICETREE_PA + dt_len + 0xfffU) & ~0xfffU;
+        /* _start uses this address for its ARM short-descriptor translation tables. */
+        ba.topOfKernelData = (N94_DEVICETREE_PA + dt_len + 0x3fffU) & ~0x3fffU;
         ba.video.v_baseAddr = N94_FB_BASE;
         ba.video.v_display = 1;
         ba.video.v_rowBytes = 640 * 4;
