@@ -16,7 +16,7 @@ def probe(binary, bundle, output):
         port = reservation.getsockname()[1]
     command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
-               "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", "guest_errors,unimp", "-D", str(log)]
+               "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", "in_asm,int,guest_errors,unimp", "-D", str(log)]
     snapshots = []
     failure = None
     with (output / "stderr.log").open("w+") as errors:
