@@ -603,19 +603,22 @@ jobs:
       # running make and ninja again over an already complete tree. The hit must also carry the
       # libraries the engine links; a tree without them is built again.
       - name: Build the engine dependencies
-        if: steps.deps-cache.outputs.cache-hit != 'true' || hashFiles('ci/deps/prefix/lib/libavcodec.a', 'ci/crypto/prefix/lib/libgcrypt.a') == ''
+        if: steps.deps-cache.outputs.cache-hit != 'true' || hashFiles('ci/deps/prefix/lib/libavcodec.a') == '' || hashFiles('ci/deps/prefix/lib/pkgconfig/glib-2.0.pc') == '' || hashFiles('ci/crypto/prefix/lib/libgcrypt.a') == ''
         run: |
           deps() {
             python3 qemu-ios/contrib/portable/build-deps.py ci/deps \
-              --abi arm64-v8a --ndk "$ANDROID_NDK_ROOT" --meson "$MESON"
+              --abi arm64-v8a --ndk "$ANDROID_NDK_ROOT" --meson "$MESON" || return $?
             python3 qemu-ios/contrib/portable/build-crypto-deps.py ci/crypto \
-              --abi arm64-v8a --ndk "$ANDROID_NDK_ROOT"
+              --abi arm64-v8a --ndk "$ANDROID_NDK_ROOT" || return $?
           }
           # The pinned trees are cached, and a restored tree whose recipe no longer
           # matches is refused rather than silently reused: the recipe records the
           # workspace path, so renaming the repository is enough to stale it.
           # Retry once from an empty tree.
           deps || { rm -rf ci/deps ci/crypto; deps; }
+          test -s ci/deps/prefix/lib/pkgconfig/glib-2.0.pc
+          test -s ci/deps/prefix/lib/libavcodec.a
+          test -s ci/crypto/prefix/lib/libgcrypt.a
 
       # The guest's only network backend is slirp, and the engine's
       # --without-default-features resolves that option's "auto" to disabled: -netdev user
