@@ -73,3 +73,6 @@ jobs:
           echo "=== Verifying registered machines ==="
           ./build/qemu-system-arm -M help | grep -E "n94|iPhone-4S"
           echo "=== QEMU machine registration verified successfully! ==="
+
+      - name: Execute ARM payload on both n94 machine names and test reset
+        run: python3 ci/n94_smoke.py qemu_src/build/qemu-system-arm

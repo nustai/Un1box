@@ -18,6 +18,7 @@ internal data class CatalogFirmware(
     val released: String, val prerelease: String, val sha1: String, val bytes: Long, val urls: List<String>,
     /** The catalog's own label: available, experimental or untested (upstream's checks, not Un1box's). */
     val status: String = "",
+    val preparationBlocker: String = "",
 ) {
     /** "3.1.3", or "4.2 beta 2" for a developer build. */
     val label get() = if (prerelease.isEmpty()) version else "$version $prerelease"
@@ -60,7 +61,12 @@ internal object FirmwareCatalog {
         parse(context.assets.open("firmware-catalog.json").bufferedReader().use { it.readText() })
 
     fun parse(text: String): List<CatalogFirmware> {
-        val entries = JSONObject(text).getJSONArray("entries")
+        val root = JSONObject(text)
+        val entries = root.getJSONArray("entries")
+        // Keep unfinished boards out of FirmwareKit's list of preparable recipes.
+        root.optJSONArray("development_entries")?.let { development ->
+            for (i in 0 until development.length()) entries.put(development.getJSONObject(i))
+        }
         return (0 until entries.length()).map { entries.getJSONObject(it) }
             // "coming_soon" entries have no preparation recipe anywhere yet.
             .filter { it.has("product_type") && it.has("version") && it.optString("status") != "coming_soon" }.map { e ->
@@ -70,7 +76,7 @@ internal object FirmwareCatalog {
             }?.filter { it.startsWith("https://") } ?: emptyList()
             val prerelease = e.optString("prerelease").let { kind -> if (kind.isEmpty()) "" else "$kind ${e.optInt("prerelease_number", 0).takeIf { it > 0 } ?: ""}".trim() }
             CatalogFirmware(e.getString("id"), e.getString("board"), e.getString("product_type"), e.getString("version"), e.getString("build"),
-                e.optString("released"), prerelease, source?.optString("sha1") ?: "", source?.optLong("bytes") ?: 0L, urls, e.optString("status"))
+                e.optString("released"), prerelease, source?.optString("sha1") ?: "", source?.optLong("bytes") ?: 0L, urls, e.optString("status"), e.optString("preparation_blocker"))
         }
     }
 }

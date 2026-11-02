@@ -336,7 +336,7 @@ class MainActivity : ComponentActivity(), SensorEventListener, GuestHost {
                 val catalog = FirmwareCatalog.load(this)
                 firmwareTargets = catalog.associate { "${it.board}-${it.build}" to StoreTarget.of(it.productType, it.version) }
                 // firmwarekit prepares every catalog firmware; an APK built without it only adds copies prepared elsewhere.
-                val supported = if (File(applicationInfo.nativeLibraryDir, "libfirmwarekit.so").canExecute()) catalog.map { it.id }.toSet() else emptySet()
+                val supported = if (File(applicationInfo.nativeLibraryDir, "libfirmwarekit.so").canExecute()) catalog.filter { it.preparationBlocker.isEmpty() }.map { it.id }.toSet() else emptySet()
                 handler.post { prep.catalog = catalog; prep.supported = supported; catalogVersion++; if (overlay == Screen.STORE) store.useRecord(selectedRecordId(), recordTarget()); if (engine != null) refreshDevices() }
             } catch (_: Exception) { /* The Store falls back to the running guest's own report. */ }
         }, "store-targets").start()

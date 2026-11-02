@@ -17,6 +17,7 @@
 #include "exec/cpu-common.h"
 #include "hw/core/loader.h"
 #include "qemu/error-report.h"
+#include "qemu/bswap.h"
 #include "target/arm/cpu.h"
 #include "hw/arm/boot.h"
 #include "system/system.h"
@@ -31,8 +32,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(N94MachineState, N94_MACHINE)
 #define K48_KBOOT_MAGIC "K48KBOOT"
 #define KBOOT_TRAILER_LEN 24
 #define S5L8940_IBOOT_BASE 0x9ff00000U
-#define N94_BOOTARGS_PA (S5L8940_RAM_BASE + 0x00700000U)
-#define N94_DEVICETREE_PA (S5L8940_RAM_BASE + 0x00800000U)
+#define N94_BOOTARGS_PA (S5L8940_RAM_BASE + 0x02000000U)
+#define N94_DEVICETREE_PA (S5L8940_RAM_BASE + 0x02100000U)
 #define N94_FB_BASE (S5L8940_RAM_BASE + 0x0FD00000U)
 
 /* Apple ARM struct boot_args passed in R0 to kernel entry */
@@ -55,7 +56,7 @@ struct n94_boot_args {
     uint32_t deviceTreeP;
     uint32_t deviceTreeLength;
     char cmdline[256];
-    /* Extended XNU arm32 / iOS 9.3.6 (xnu-3248) fields */
+    /* TODO(n94): verify these speculative extensions against the guest ARM32 ABI. */
     uint32_t bootFlags;
     uint32_t memSizeActual;
     uint64_t kernEntry;
@@ -68,7 +69,6 @@ struct n94_boot_args {
 struct N94MachineState {
     MachineState parent_obj;
     S5L8940State soc;
-    MemoryRegion ram;
 
     /* Boot targets */
     uint32_t kernel_entry;
@@ -82,6 +82,57 @@ struct N94MachineState {
     char *nand_overlay_path;
     bool baseband;
 };
+
+static void n94_load_kboot(N94MachineState *s)
+{
+    FILE *f = fopen(s->kboot_path, "rb");
+    uint8_t trailer[KBOOT_TRAILER_LEN];
+    long size;
+    uint32_t load, entry, args, length;
+    uint8_t *image;
+
+    if (!f) {
+        error_report("n94: cannot open kboot %s", s->kboot_path);
+        exit(EXIT_FAILURE);
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < KBOOT_TRAILER_LEN ||
+        size > (long)S5L8940_RAM_SIZE + KBOOT_TRAILER_LEN ||
+        fseek(f, size - KBOOT_TRAILER_LEN, SEEK_SET) != 0 ||
+        fread(trailer, 1, sizeof(trailer), f) != sizeof(trailer)) {
+        error_report("n94: invalid kboot size");
+        exit(EXIT_FAILURE);
+    }
+    if (memcmp(trailer, N94_KBOOT_MAGIC, 8) &&
+        memcmp(trailer, K48_KBOOT_MAGIC, 8)) {
+        error_report("n94: invalid kboot magic");
+        exit(EXIT_FAILURE);
+    }
+    load = ldl_le_p(trailer + 8);
+    entry = ldl_le_p(trailer + 12);
+    args = ldl_le_p(trailer + 16);
+    length = ldl_le_p(trailer + 20);
+    /* TODO(n94): support additional bundle segment records explicitly. */
+    if (!length || length != size - KBOOT_TRAILER_LEN ||
+        load < S5L8940_RAM_BASE ||
+        (uint64_t)load + length > (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE ||
+        (entry & 3) || entry < load || (uint64_t)entry + 4 > (uint64_t)load + length ||
+        args < load || (args & 3) || (uint64_t)args + 4 > (uint64_t)load + length) {
+        error_report("n94: invalid kboot memory layout");
+        exit(EXIT_FAILURE);
+    }
+    image = g_malloc(length);
+    rewind(f);
+    if (fread(image, 1, length, f) != length) {
+        error_report("n94: truncated kboot image");
+        exit(EXIT_FAILURE);
+    }
+    fclose(f);
+    /* QEMU restores the boot image on every reset, before resuming the CPU. */
+    rom_add_blob_fixed("n94.kboot", image, length, load);
+    g_free(image);
+    s->kernel_entry = entry;
+    s->bootargs_pa = args;
+}
 
 /* Mach-O 32-bit loader for iOS xnu kernelcache */
 static uint32_t n94_load_macho(const char *filename)
@@ -115,6 +166,10 @@ static uint32_t n94_load_macho(const char *filename)
         return 0;
     }
 
+    if (header.sizeofcmds > 16 * 1024 * 1024 || header.ncmds > header.sizeofcmds / 8) {
+        error_report("n94: invalid Mach-O command table");
+        exit(EXIT_FAILURE);
+    }
     uint8_t *cmd_buf = g_malloc(header.sizeofcmds);
     if (fread(cmd_buf, 1, header.sizeofcmds, f) != header.sizeofcmds) {
         error_report("n94_load_macho: failed to read load commands");
@@ -127,8 +182,17 @@ static uint32_t n94_load_macho(const char *filename)
     uint32_t offset = 0;
 
     for (uint32_t i = 0; i < header.ncmds && offset < header.sizeofcmds; i++) {
-        uint32_t cmd = *(uint32_t *)(cmd_buf + offset);
-        uint32_t cmdsize = *(uint32_t *)(cmd_buf + offset + 4);
+        if (header.sizeofcmds - offset < 8) {
+            error_report("n94: truncated Mach-O command");
+            exit(EXIT_FAILURE);
+        }
+        uint32_t cmd = ldl_le_p(cmd_buf + offset);
+        uint32_t cmdsize = ldl_le_p(cmd_buf + offset + 4);
+        if (cmdsize < 8 || cmdsize > header.sizeofcmds - offset ||
+            (cmd == 1 && cmdsize < 56) || (cmd == 5 && cmdsize < 80)) {
+            error_report("n94: invalid Mach-O command size");
+            exit(EXIT_FAILURE);
+        }
 
         if (cmd == 0x1 /* LC_SEGMENT */) {
             uint32_t vmaddr = *(uint32_t *)(cmd_buf + offset + 24);
@@ -136,12 +200,21 @@ static uint32_t n94_load_macho(const char *filename)
             uint32_t fileoff = *(uint32_t *)(cmd_buf + offset + 32);
             uint32_t filesize = *(uint32_t *)(cmd_buf + offset + 36);
 
+            if (filesize > vmsize || (vmsize &&
+                (vmaddr < S5L8940_RAM_BASE ||
+                 (uint64_t)vmaddr + vmsize > N94_BOOTARGS_PA))) {
+                error_report("n94: Mach-O segment exceeds reserved kernel RAM");
+                exit(EXIT_FAILURE);
+            }
+
             if (filesize > 0) {
                 fseek(f, fileoff, SEEK_SET);
                 uint8_t *seg_buf = g_malloc(filesize);
-                if (fread(seg_buf, 1, filesize, f) == filesize) {
-                    cpu_physical_memory_write(vmaddr, seg_buf, filesize);
+                if (fread(seg_buf, 1, filesize, f) != filesize) {
+                    error_report("n94: truncated Mach-O segment");
+                    exit(EXIT_FAILURE);
                 }
+                cpu_physical_memory_write(vmaddr, seg_buf, filesize);
                 g_free(seg_buf);
             }
             if (vmsize > filesize) {
@@ -178,7 +251,7 @@ static void n94_reset(void *opaque)
     env->regs[13] = S5L8940_RAM_BASE + 0x00100000;
 
     /* 3. R0 = bootargs physical address as expected by Apple _start */
-    env->regs[0] = s->bootargs_pa ? s->bootargs_pa : N94_BOOTARGS_PA;
+    env->regs[0] = s->bootargs_pa;
 
     /* 4. CPSR = 0x000000D3 (Supervisor mode, IRQ/FIQ disabled, ARM state) */
     cpsr_write(env, 0x000000D3, 0xffffffff, CPSRWriteRaw);
@@ -194,10 +267,10 @@ static void n94_init(MachineState *machine)
 
     /* 1. Allocate 512 MB LPDDR2 RAM */
     if (machine->ram_size != S5L8940_RAM_SIZE) {
-        machine->ram_size = S5L8940_RAM_SIZE;
+        error_report("n94: exactly 512 MiB of RAM is required");
+        exit(EXIT_FAILURE);
     }
-    memory_region_init_ram(&s->ram, OBJECT(machine), "n94.ram", S5L8940_RAM_SIZE, &error_fatal);
-    memory_region_add_subregion(sysmem, S5L8940_RAM_BASE, &s->ram);
+    memory_region_add_subregion(sysmem, S5L8940_RAM_BASE, machine->ram);
 
     /* 2. Initialize S5L8940 SoC */
     object_initialize_child(OBJECT(machine), "soc", &s->soc, TYPE_S5L8940_SOC);
@@ -212,37 +285,7 @@ static void n94_init(MachineState *machine)
 
     /* 3. Boot path selection: kboot bundle, iBoot binary, or direct kernelcache */
     if (s->kboot_path) {
-        FILE *kf = fopen(s->kboot_path, "rb");
-        if (kf) {
-            fseek(kf, 0, SEEK_END);
-            long ksize = ftell(kf);
-            if (ksize >= KBOOT_TRAILER_LEN) {
-                fseek(kf, ksize - KBOOT_TRAILER_LEN, SEEK_SET);
-                uint8_t trailer[KBOOT_TRAILER_LEN];
-                if (fread(trailer, 1, KBOOT_TRAILER_LEN, kf) == KBOOT_TRAILER_LEN) {
-                    if (memcmp(trailer, N94_KBOOT_MAGIC, 8) != 0 &&
-                        memcmp(trailer, K48_KBOOT_MAGIC, 8) != 0) {
-                        error_report("n94: invalid kboot magic");
-                        fclose(kf);
-                        return;
-                    }
-                    uint32_t load_pa = *(uint32_t *)(trailer + 8);
-                    uint32_t entry_pa = *(uint32_t *)(trailer + 12);
-                    uint32_t bootargs_pa = *(uint32_t *)(trailer + 16);
-                    uint32_t image_len = *(uint32_t *)(trailer + 20);
-
-                    fseek(kf, 0, SEEK_SET);
-                    uint8_t *kbuf = g_malloc(image_len);
-                    if (fread(kbuf, 1, image_len, kf) == image_len) {
-                        cpu_physical_memory_write(load_pa, kbuf, image_len);
-                        s->kernel_entry = entry_pa;
-                        s->bootargs_pa = bootargs_pa;
-                    }
-                    g_free(kbuf);
-                }
-            }
-            fclose(kf);
-        }
+        n94_load_kboot(s);
     } else if (s->iboot_path) {
         /* iBoot stage into link address */
         load_image_targphys(s->iboot_path, S5L8940_IBOOT_BASE, 0x1000000, &error_fatal);
@@ -251,8 +294,16 @@ static void n94_init(MachineState *machine)
     } else if (machine->kernel_filename) {
         /* Direct kernelcache + DeviceTree loading */
         s->kernel_entry = n94_load_macho(machine->kernel_filename);
+        if (!s->kernel_entry) {
+            error_report("n94: kernel entry is missing");
+            exit(EXIT_FAILURE);
+        }
 
-        uint32_t dt_len = 0x80000;
+        if (!machine->dtb) {
+            error_report("n94: direct kernel boot requires an Apple ARM DeviceTree via -dtb");
+            exit(EXIT_FAILURE);
+        }
+        uint32_t dt_len = 0;
         if (machine->dtb) {
             ssize_t loaded = load_image_targphys(machine->dtb, N94_DEVICETREE_PA, 0x100000, &error_fatal);
             if (loaded > 0) {
@@ -268,7 +319,7 @@ static void n94_init(MachineState *machine)
         ba.virtBase = S5L8940_RAM_BASE;
         ba.physBase = S5L8940_RAM_BASE;
         ba.memSize = S5L8940_RAM_SIZE;
-        ba.topOfKernelData = S5L8940_RAM_BASE + 0x02000000U;
+        ba.topOfKernelData = (N94_DEVICETREE_PA + dt_len + 0xfffU) & ~0xfffU;
         ba.video.v_baseAddr = N94_FB_BASE;
         ba.video.v_display = 1;
         ba.video.v_rowBytes = 640 * 4;
@@ -335,6 +386,31 @@ static bool n94_get_baseband(Object *obj, Error **errp)
     return N94_MACHINE(obj)->baseband;
 }
 
+/* TODO(n94): connect these paths to an actual S5L8940 storage controller. */
+static char *n94_get_nand(Object *obj, Error **errp)
+{
+    return g_strdup(N94_MACHINE(obj)->nand_path);
+}
+
+static void n94_set_nand(Object *obj, const char *value, Error **errp)
+{
+    N94MachineState *s = N94_MACHINE(obj);
+    g_free(s->nand_path);
+    s->nand_path = g_strdup(value);
+}
+
+static char *n94_get_nand_overlay(Object *obj, Error **errp)
+{
+    return g_strdup(N94_MACHINE(obj)->nand_overlay_path);
+}
+
+static void n94_set_nand_overlay(Object *obj, const char *value, Error **errp)
+{
+    N94MachineState *s = N94_MACHINE(obj);
+    g_free(s->nand_overlay_path);
+    s->nand_overlay_path = g_strdup(value);
+}
+
 static void n94_set_baseband(Object *obj, bool value, Error **errp)
 {
     N94_MACHINE(obj)->baseband = value;
@@ -348,7 +424,7 @@ static void n94_class_init(ObjectClass *oc, const void *data)
     mc->init = n94_init;
     mc->max_cpus = 2;
     mc->default_cpus = 2;
-    mc->min_cpus = 1;
+    mc->min_cpus = 2;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a9");
     mc->default_ram_size = S5L8940_RAM_SIZE;
     mc->default_ram_id = "n94.ram";
@@ -356,6 +432,8 @@ static void n94_class_init(ObjectClass *oc, const void *data)
     object_class_property_add_str(oc, "kboot", n94_get_kboot, n94_set_kboot);
     object_class_property_add_str(oc, "iboot", n94_get_iboot, n94_set_iboot);
     object_class_property_add_str(oc, "nor-rw", n94_get_nor, n94_set_nor);
+    object_class_property_add_str(oc, "nand", n94_get_nand, n94_set_nand);
+    object_class_property_add_str(oc, "nand-overlay", n94_get_nand_overlay, n94_set_nand_overlay);
     object_class_property_add_bool(oc, "baseband", n94_get_baseband, n94_set_baseband);
 }
 
@@ -369,10 +447,7 @@ static const TypeInfo n94_machines_info[] = {
     },
     {
         .name          = TYPE_IPHONE4S_MACHINE,
-        .parent        = TYPE_MACHINE,
-        .interfaces    = arm_machine_interfaces,
-        .instance_size = sizeof(N94MachineState),
-        .class_init    = n94_class_init,
+        .parent        = TYPE_N94_MACHINE,
     },
 };
 

@@ -1,4 +1,74 @@
-{"format": 1, "first_run": "k48ap-7B500", "bundled": {"n72ap-7E18": "Device/n72ap-7E18.itbase"}, "entries": [
+{"format": 1, "first_run": "k48ap-7B500", "bundled": {"n72ap-7E18": "Device/n72ap-7E18.itbase"}, "development_entries": [
+{
+  "id": "n94ap-13G37",
+  "board": "n94ap",
+  "product_type": "iPhone4,1",
+  "version": "9.3.6",
+  "build": "13G37",
+  "released": "2019-07-22",
+  "status": "untested",
+  "media": [
+    "Music",
+    "Photos",
+    "Videos"
+  ],
+  "source": {
+    "kind": "ipsw"
+  },
+  "display": {
+    "width": 640,
+    "height": 960,
+    "scale": 2,
+    "fps": 60
+  },
+  "keys": {
+    "AppleLogo": {
+      "file": "applelogo@2x~iphone.s5l8940x.img3",
+      "iv": "9109c04f0c0b16303574562e03b5f973",
+      "key": "2a7b686b2642abdd545e513aaa3d85c7153d2f2ec906f0b28d86c7a262ea3c11"
+    },
+    "DeviceTree": {
+      "file": "DeviceTree.n94ap.img3",
+      "iv": "ed62c1631514e485fbd2db0b616f1d98",
+      "key": "0df08ae913ef8109fe9d7c9b69c29836dadb5d74dbfe7d5ae12c0679cac33ed5"
+    },
+    "iBSS": {
+      "file": "iBSS.n94.RELEASE.dfu",
+      "iv": "d76439252e683a3c5728ba340c45672a",
+      "key": "797c028a5c95a8980c762f63698ea71b26b98a2f01b8572d81e72a645bb44395"
+    },
+    "iBEC": {
+      "file": "iBEC.n94.RELEASE.dfu",
+      "iv": "d76439252e683a3c5728ba340c45672a",
+      "key": "2ecd834e6005b10acd77d98827f0ab0f302fc599c268b4795fde4c1a47ce081e"
+    },
+    "kernelcache": {
+      "file": "kernelcache.release.n94",
+      "iv": "23b0d1ab552c95b2d920f3847ecff985",
+      "key": "a90b2e894db15c583f0146e4762f667ae5a54002e357279f2688dac0695849b7"
+    },
+    "RestoreRamDisk": {
+      "file": "058-49032-040.dmg",
+      "iv": "0d4237e65a21e7177c40dd1f1e435f1c",
+      "key": "06d072f749625566c525fb118cb691da2121227777ce7f1244822530a590ce99"
+    },
+    "rootfs": {
+      "file": "058-49412-040.dmg",
+      "key": "66aa77da612711b942ff984d91d7a657c57bb3510b284c592b86d0f93587fe09884ec669"
+    }
+  },
+  "recipe": null,
+  "emulator": {
+    "min_protocol": 1
+  },
+  "estimates": {
+    "prepared_bytes": 1613420044,
+    "peak_bytes": 4200000000,
+    "seconds": 120
+  },
+  "preparation_blocker": "iPhone 4S support is under development. iOS 9.3.6 cannot start in this build: system preparation and the A5 storage, interrupt and graphics models are incomplete. Choosing an IPSW or the current n94_base.itbase will not make it boot."
+}
+], "entries": [
  {
   "id": "k48ap-7B367",
   "board": "k48ap",

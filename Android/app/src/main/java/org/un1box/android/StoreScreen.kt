@@ -60,7 +60,7 @@ internal fun JSONObject.text(key: String): String? = if (isNull(key)) null else 
 internal fun productName(productType: String): String = when (productType) {
     "iPod1,1" -> "iPod touch"; "iPod2,1" -> "iPod touch (2nd generation)"; "iPod3,1" -> "iPod touch (3rd generation)"
     "iPod4,1" -> "iPod touch (4th generation)"; "iPhone1,1" -> "iPhone"; "iPhone1,2" -> "iPhone 3G"; "iPhone2,1" -> "iPhone 3GS"
-    "iPhone3,1" -> "iPhone 4"; "iPad1,1" -> "iPad"; else -> productType
+    "iPhone3,1" -> "iPhone 4"; "iPhone4,1" -> "iPhone 4S"; "iPad1,1" -> "iPad"; else -> productType
 }
 
 internal fun byteSize(bytes: Long): String = when {

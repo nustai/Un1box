@@ -75,13 +75,8 @@ static void s5l8940_aic_update(S5L8940AICState *s)
                 }
             }
 
-            if (cpu_active) {
-                if (cpu_active & s->type[i]) {
-                    has_fiq = true;
-                } else {
-                    has_irq = true;
-                }
-            }
+            has_fiq |= (cpu_active & s->type[i]) != 0;
+            has_irq |= (cpu_active & ~s->type[i]) != 0;
         }
 
         qemu_set_irq(s->irq_out[cpu], has_irq);

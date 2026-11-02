@@ -44,6 +44,8 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* Realize CPU cores (Cortex-A9 is ARMv7-A without EL3) */
     for (int i = 0; i < 2; i++) {
         object_property_set_bool(OBJECT(&s->cpu[i]), "reset-hivecs", true, &error_fatal);
+        /* TODO(n94): implement the S5L8940 secondary-core release protocol. */
+        object_property_set_bool(OBJECT(&s->cpu[i]), "start-powered-off", i != 0, &error_fatal);
         if (!qdev_realize(DEVICE(&s->cpu[i]), NULL, errp)) {
             return;
         }
@@ -71,9 +73,6 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
 
     /* 3. Realize and map UART1 (Serial debug console) */
-    if (serial_hd(0)) {
-        qdev_prop_set_chr(s->uart1, "chardev", serial_hd(0));
-    }
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart1), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->uart1), 0, S5L8940_UART1_DEBUG_BASE);
     /* DeviceTree specifies interrupt 0x16 for UART1 */
