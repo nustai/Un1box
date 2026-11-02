@@ -128,6 +128,14 @@ class Node:
     def set(self, name, value):
         self.props[name] = (value, self.props.get(name, (b"", 0))[1])
 
+    def clear_firmware_flags(self):
+        # XNU's DT walker at 0x8038783c uses the full 32-bit length. The two
+        # marketing-* placeholders in stock 13G37 carry bit 31 in the IPSW;
+        # passing it through wrapped the pointer from 0x8125.... to 0x0125.... .
+        count = sum(bool(flags) for _, flags in self.props.values())
+        self.props = {name: (value, 0) for name, (value, _) in self.props.items()}
+        return count + sum(child.clear_firmware_flags() for child in self.children)
+
 
 def macho(data):
     if len(data) < 28:
@@ -164,6 +172,7 @@ def prepare(kernel, raw_dt, version, output):
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
         raise ValueError("Apple DT parser did not round-trip the input")
+    cleared_flags = dt.clear_firmware_flags()
     dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
     chosen = dt.at("chosen")
     for key, value in {"board-id": 8, "chip-id": 0x8940, "display-scale": 2,
@@ -209,7 +218,8 @@ def prepare(kernel, raw_dt, version, output):
     (output / "n94-diagnostic-dt.bin").write_bytes(cooked_dt)
     report = {"diagnostic_only": True, "kernel_entry": hex(entry), "bootargs_version_candidate": version,
               "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
-              "root_filesystem": "absent", "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
+              "root_filesystem": "absent", "firmware_property_flags_cleared": cleared_flags,
+              "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
               "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
     (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)
