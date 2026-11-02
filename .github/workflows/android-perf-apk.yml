@@ -839,6 +839,19 @@ jobs:
           # libraries so firmwarekit can run out of nativeLibraryDir.
           python3 Android/scripts/check-apk.py "$APK" ||
             echo "::warning::check-apk.py expects uncompressed native libraries; legacy packaging is expected here"
+          python3 - "$APK" <<'PY'
+          import json, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              catalog = json.loads(apk.read('assets/firmware-catalog.json'))
+              rows = catalog['entries'] + catalog.get('development_entries', [])
+              matches = [row for row in rows if row['id'] == 'n94ap-13G37']
+              assert len(matches) == 1, 'APK must expose exactly one iPhone 4S firmware'
+              assert matches[0]['product_type'] == 'iPhone4,1'
+              assert matches[0]['preparation_blocker'], 'Unfinished n94 preparation must be labelled'
+              engine = apk.read('lib/arm64-v8a/libqemu-arm.so')
+              assert b'iPhone-4S' in engine and b'n94-machine' in engine, 'n94 engine is missing'
+          print('Verified n94 entry and ARM64 engine in the signed APK (not an iOS boot test)')
+          PY
           {
             echo "# Un1box perf APK"
             echo
