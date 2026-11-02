@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      kernel_probe:
+        description: Download verified stock 13G37 firmware and collect actual kernel traces
+        type: boolean
+        default: false
 
 jobs:
   build-n94-qemu:
@@ -76,3 +81,26 @@ jobs:
 
       - name: Execute ARM payload on both n94 machine names and test reset
         run: python3 ci/n94_smoke.py qemu_src/build/qemu-system-arm
+
+      - name: Prepare diagnostic boot images from verified Apple firmware
+        if: github.event_name == 'workflow_dispatch' && inputs.kernel_probe
+        run: |
+          python3 -m pip install cryptography
+          curl --fail --location --retry 3 --max-time 600 \
+            'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
+          python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
+
+      - name: Trace actual iOS kernel with both boot-args version candidates
+        if: github.event_name == 'workflow_dispatch' && inputs.kernel_probe
+        timeout-minutes: 3
+        run: python3 ci/n94_kernel_probe.py qemu_src/build/qemu-system-arm n94-images n94-traces
+
+      - name: Keep diagnostic traces without redistributing firmware
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.kernel_probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: n94-kernel-traces
+          path: |
+            n94-traces/
+            n94-images/*-layout.json
+          if-no-files-found: warn

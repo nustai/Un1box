@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""Prepare a diagnostic n94 boot image. No filesystem or successful iOS boot is implied."""
+import argparse
+import hashlib
+import json
+import pathlib
+import struct
+import zipfile
+import zlib
+
+RAM = 0x80000000
+RAM_SIZE = 512 << 20
+IPSW_SHA256 = "2466a99001c9e091e22f330a1c97a231179d1679f58fd9d1cf0c1694ca8261bd"
+IPSW_URL = "https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw"
+
+
+def align(value, size=4096):
+    return (value + size - 1) & -size
+
+
+def u32(*values):
+    return struct.pack("<" + "I" * len(values), *values)
+
+
+def decrypt_img3(data, key, iv):
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    offset = 20
+    while offset + 12 <= len(data):
+        tag, total, length = struct.unpack_from("<4sII", data, offset)
+        if total < 12 or offset + total > len(data) or length > total - 12:
+            raise ValueError("invalid IMG3 tag")
+        if tag == b"ATAD":
+            encrypted = data[offset + 12:offset + 12 + align(length, 16)]
+            decryptor = Cipher(algorithms.AES(bytes.fromhex(key)), modes.CBC(bytes.fromhex(iv))).decryptor()
+            return (decryptor.update(encrypted) + decryptor.finalize())[:length]
+        offset += total
+    raise ValueError("IMG3 DATA tag missing")
+
+
+def decompress(data):
+    if not data.startswith(b"complzss"):
+        raise ValueError("expected a complzss kernelcache")
+    adler, expected, compressed = struct.unpack_from(">III", data, 8)
+    if expected > 128 << 20 or compressed > len(data) - 0x180:
+        raise ValueError("invalid complzss lengths")
+    source = data[0x180:0x180 + compressed]
+    ring = bytearray(b" " * 4096)
+    cursor, offset, flags = 4096 - 18, 0, 0
+    output = bytearray()
+    while offset < len(source) and len(output) < expected:
+        flags >>= 1
+        if not flags & 0x100:
+            flags = source[offset] | 0xff00
+            offset += 1
+        if flags & 1:
+            if offset >= len(source):
+                raise ValueError("truncated LZSS literal")
+            values = [source[offset]]
+            offset += 1
+        else:
+            if offset + 2 > len(source):
+                raise ValueError("truncated LZSS match")
+            position = source[offset] | ((source[offset + 1] & 0xf0) << 4)
+            count = (source[offset + 1] & 15) + 3
+            offset += 2
+            # Matches may overlap the ring write cursor.
+            for i in range(count):
+                value = ring[(position + i) & 4095]
+                output.append(value)
+                ring[cursor] = value
+                cursor = (cursor + 1) & 4095
+            continue
+        for value in values:
+            output.append(value)
+            ring[cursor] = value
+            cursor = (cursor + 1) & 4095
+    if len(output) != expected or zlib.adler32(output) != adler:
+        raise ValueError("kernelcache length/Adler-32 mismatch")
+    return bytes(output)
+
+
+class Node:
+    def __init__(self, props, children):
+        self.props, self.children = props, children
+
+    @classmethod
+    def read(cls, data, offset=0, depth=0):
+        if depth > 64 or offset + 8 > len(data):
+            raise ValueError("invalid Apple DT node")
+        count, children = struct.unpack_from("<II", data, offset)
+        offset += 8
+        props = {}
+        for _ in range(count):
+            if offset + 36 > len(data):
+                raise ValueError("truncated Apple DT property")
+            name = data[offset:offset + 32].split(b"\0")[0].decode("ascii")
+            length = struct.unpack_from("<I", data, offset + 32)[0]
+            offset += 36
+            size = length & 0x7fffffff
+            if offset + align(size, 4) > len(data) or name in props:
+                raise ValueError("invalid Apple DT property length/name")
+            props[name] = (data[offset:offset + size], length & 0x80000000)
+            offset += align(size, 4)
+        result = []
+        for _ in range(children):
+            child, offset = cls.read(data, offset, depth + 1)
+            result.append(child)
+        return cls(props, result), offset
+
+    def encode(self):
+        result = bytearray(u32(len(self.props), len(self.children)))
+        for name, (value, flags) in self.props.items():
+            encoded = name.encode("ascii")
+            if len(encoded) >= 32:
+                raise ValueError("Apple DT property name too long")
+            result += encoded.ljust(32, b"\0") + u32(len(value) | flags) + value
+            result += b"\0" * (align(len(value), 4) - len(value))
+        for child in self.children:
+            result += child.encode()
+        return bytes(result)
+
+    def at(self, path):
+        current = self
+        for name in filter(None, path.split("/")):
+            current = next(c for c in current.children if c.props["name"][0].rstrip(b"\0").decode() == name)
+        return current
+
+    def set(self, name, value):
+        self.props[name] = (value, self.props.get(name, (b"", 0))[1])
+
+
+def macho(data):
+    if len(data) < 28:
+        raise ValueError("truncated Mach-O")
+    magic, cpu, subtype, kind, count, command_bytes, _ = struct.unpack_from("<7I", data)
+    if (magic, cpu, subtype, kind) != (0xfeedface, 12, 9, 2) or 28 + command_bytes > len(data):
+        raise ValueError("not the expected ARMv7 executable")
+    segments, entry, offset = [], None, 28
+    for _ in range(count):
+        cmd, size = struct.unpack_from("<II", data, offset)
+        if size < 8 or offset + size > 28 + command_bytes:
+            raise ValueError("invalid Mach-O command")
+        if cmd == 1:
+            if size < 56:
+                raise ValueError("short segment command")
+            name = data[offset + 8:offset + 24].rstrip(b"\0").decode()
+            address, memory, fileoff, filesize = struct.unpack_from("<4I", data, offset + 24)
+            if memory and name != "__PAGEZERO":
+                if filesize > memory or fileoff + filesize > len(data) or address < RAM or address + memory > RAM + (128 << 20):
+                    raise ValueError("invalid kernel segment")
+                segments.append((name, address, memory, fileoff, filesize))
+        elif cmd == 5:
+            if size < 80:
+                raise ValueError("short ARM thread command")
+            entry = struct.unpack_from("<I", data, offset + 76)[0]
+        offset += size
+    if not entry or not any(address <= entry < address + memory for _, address, memory, _, _ in segments):
+        raise ValueError("entry is not inside a loaded segment")
+    return segments, entry
+
+
+def prepare(kernel, raw_dt, version, output):
+    segments, entry = macho(kernel)
+    dt, end = Node.read(raw_dt)
+    if end != len(raw_dt) or dt.encode() != raw_dt:
+        raise ValueError("Apple DT parser did not round-trip the input")
+    dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
+    chosen = dt.at("chosen")
+    for key, value in {"board-id": 8, "chip-id": 0x8940, "display-scale": 2,
+                       "display-rotation": 0, "debug-enabled": 1}.items():
+        chosen.set(key, u32(value))
+    # Diagnostic clock assumptions are recorded, not presented as verified A5 hardware.
+    cpu = dt.at("cpus/cpu0")
+    cpu.set("clock-frequency", u32(800_000_000))
+    cpu.set("fixed-frequency", u32(24_000_000))
+    cpu.set("timebase-frequency", u32(24_000_000))
+    framebuffer, framebuffer_size = 0x8fd00000, align(640 * 960 * 4)
+    dt.at("vram").set("reg", u32(framebuffer, framebuffer_size))
+    dt_pa = align(max(address + memory for _, address, memory, _, _ in segments))
+    args_pa = dt_pa + align(len(dt.encode()))
+    top = align(args_pa + 4096, 16384)
+    memory_map = [("Kernel-" + name, address, memory) for name, address, memory, _, _ in segments]
+    memory_map += [("DeviceTree", dt_pa, len(dt.encode())), ("BootArgs", args_pa, 4096)]
+    node = dt.at("chosen/memory-map")
+    slots = [k for k in node.props if k.startswith("MemoryMapReserved-")]
+    if len(slots) < len(memory_map):
+        raise ValueError("insufficient DT memory-map slots")
+    for slot, (name, address, size) in zip(slots, memory_map):
+        del node.props[slot]
+        node.set(name, u32(address, size))
+    cooked_dt = dt.encode()
+    if len(cooked_dt) > args_pa - dt_pa:
+        raise ValueError("DT grew beyond its reserved page range")
+    command = b"-v serial=3 debug=0x14e keepsyms=1"
+    # The initial ABI prefix is visible in this kernel's _start. Version and tail
+    # still need guest validation; run the same probe with versions 2 and 3.
+    args = struct.pack("<HH", 1, version)
+    args += u32(RAM, RAM, RAM_SIZE, top)
+    args += u32(framebuffer, 0, 640 * 4, 640, 960, 32)
+    args += u32(0, dt_pa, len(cooked_dt))
+    args += command.ljust(256, b"\0") + u32(0, RAM_SIZE)
+    image = bytearray(top - RAM)
+    for _, address, _, fileoff, filesize in segments:
+        image[address - RAM:address - RAM + filesize] = kernel[fileoff:fileoff + filesize]
+    image[dt_pa - RAM:dt_pa - RAM + len(cooked_dt)] = cooked_dt
+    image[args_pa - RAM:args_pa - RAM + len(args)] = args
+    output.mkdir(parents=True, exist_ok=True)
+    (output / f"n94-v{version}.kboot").write_bytes(image + struct.pack("<8s4I", b"N94KBOOT", RAM, entry, args_pa, len(image)))
+    (output / "n94-diagnostic-dt.bin").write_bytes(cooked_dt)
+    report = {"diagnostic_only": True, "kernel_entry": hex(entry), "bootargs_version_candidate": version,
+              "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
+              "root_filesystem": "absent", "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
+              "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
+    (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report), flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ipsw", type=pathlib.Path)
+    parser.add_argument("--kernel", type=pathlib.Path)
+    parser.add_argument("--dt", type=pathlib.Path)
+    parser.add_argument("--output", required=True, type=pathlib.Path)
+    options = parser.parse_args()
+    if options.ipsw:
+        digest = hashlib.sha256()
+        with options.ipsw.open("rb") as stream:
+            for block in iter(lambda: stream.read(8 << 20), b""):
+                digest.update(block)
+        if digest.hexdigest() != IPSW_SHA256:
+            raise ValueError("IPSW SHA-256 mismatch")
+        with zipfile.ZipFile(options.ipsw) as archive:
+            kernel = decompress(decrypt_img3(archive.read("kernelcache.release.n94"),
+                "a90b2e894db15c583f0146e4762f667ae5a54002e357279f2688dac0695849b7", "23b0d1ab552c95b2d920f3847ecff985"))
+            dt = decrypt_img3(archive.read("Firmware/all_flash/all_flash.n94ap.production/DeviceTree.n94ap.img3"),
+                "0df08ae913ef8109fe9d7c9b69c29836dadb5d74dbfe7d5ae12c0679cac33ed5", "ed62c1631514e485fbd2db0b616f1d98")
+    elif options.kernel and options.dt:
+        kernel, dt = options.kernel.read_bytes(), options.dt.read_bytes()
+    else:
+        parser.error("provide --ipsw or both --kernel and --dt")
+    for version in (2, 3):
+        prepare(kernel, dt, version, options.output)
+
+
+if __name__ == "__main__":
+    main()
