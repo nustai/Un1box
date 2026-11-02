@@ -17,7 +17,7 @@ def bundle():
         words += [0xE3A01000 | byte, 0xE5821000]  # mov r1, #byte; str r1, [r2]
     words += [0xEAFFFFFE]
     words[0] = 0xE59F2000 | (len(words) * 4 - 8)  # ldr r2, [pc, #literal]
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<I", 0x02600020)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<I", 0x32600020)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 

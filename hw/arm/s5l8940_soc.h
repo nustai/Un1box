@@ -19,48 +19,53 @@
 #define TYPE_S5L8940_SOC "s5l8940-soc"
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940State, S5L8940_SOC)
 
-/* S5L8940 MMIO Memory Map (strictly verified from DeviceTree.n94ap) */
+/* Apple DT /arm-io/ranges = { child: 0, parent: 0x30000000, size: 0x10000000 }.
+ * Peripheral reg entries are bus-relative; map them into root physical memory.
+ * The arm-io node's own reg (0x3fb00000, 0x3fc00000) is already root-relative.
+ * TODO(n94): register semantics still require hardware/guest-driver verification.
+ */
+#define S5L8940_ARM_IO_BASE        0x30000000U
 #define S5L8940_IO_BASE_0          0x3fb00000
 #define S5L8940_IO_SIZE_0          0x1000
 #define S5L8940_IO_BASE_1          0x3fc00000
 #define S5L8940_IO_SIZE_1          0x1000
 
-#define S5L8940_AIC_BASE           0x0f200000
+#define S5L8940_AIC_BASE           (S5L8940_ARM_IO_BASE + 0x0f200000U)
 #define S5L8940_AIC_SIZE           0x10000
 
-#define S5L8940_GPIO_BASE          0x0fa00000
+#define S5L8940_GPIO_BASE          (S5L8940_ARM_IO_BASE + 0x0fa00000U)
 #define S5L8940_GPIO_SIZE          0x1000
 
-#define S5L8940_PMGR_BASE          0x0f100000
+#define S5L8940_PMGR_BASE          (S5L8940_ARM_IO_BASE + 0x0f100000U)
 #define S5L8940_PMGR_SIZE          0x7000
-#define S5L8940_WDT_BASE           0x0f103020
+#define S5L8940_WDT_BASE           (S5L8940_ARM_IO_BASE + 0x0f103020U)
 #define S5L8940_WDT_SIZE           0x10
 
-#define S5L8940_UART0_BASE         0x02500000
-#define S5L8940_UART1_DEBUG_BASE   0x02600000
-#define S5L8940_UART3_BT_BASE      0x02800000
-#define S5L8940_UART5_GG_BASE      0x02a00000
+#define S5L8940_UART0_BASE         (S5L8940_ARM_IO_BASE + 0x02500000U)
+#define S5L8940_UART1_DEBUG_BASE   (S5L8940_ARM_IO_BASE + 0x02600000U)
+#define S5L8940_UART3_BT_BASE      (S5L8940_ARM_IO_BASE + 0x02800000U)
+#define S5L8940_UART5_GG_BASE      (S5L8940_ARM_IO_BASE + 0x02a00000U)
 #define S5L8940_UART_SIZE          0x1000
 
-#define S5L8940_CLCD_BASE          0x0a100000
+#define S5L8940_CLCD_BASE          (S5L8940_ARM_IO_BASE + 0x0a100000U)
 #define S5L8940_CLCD_SIZE          0x7000
-#define S5L8940_CLCD_SUB_BASE_1    0x09200000
+#define S5L8940_CLCD_SUB_BASE_1    (S5L8940_ARM_IO_BASE + 0x09200000U)
 #define S5L8940_CLCD_SUB_SIZE_1    0x2000
-#define S5L8940_CLCD_SUB_BASE_2    0x09300000
+#define S5L8940_CLCD_SUB_BASE_2    (S5L8940_ARM_IO_BASE + 0x09300000U)
 #define S5L8940_CLCD_SUB_SIZE_2    0x1000
 
-#define S5L8940_MIPI_DSIM_BASE     0x09500000
+#define S5L8940_MIPI_DSIM_BASE     (S5L8940_ARM_IO_BASE + 0x09500000U)
 #define S5L8940_MIPI_DSIM_SIZE     0x1000
 
-#define S5L8940_SGX_BASE           0x05100000
+#define S5L8940_SGX_BASE           (S5L8940_ARM_IO_BASE + 0x05100000U)
 #define S5L8940_SGX_SIZE           0x18000
-#define S5L8940_SGX_MMU_BASE       0x0f10b000
+#define S5L8940_SGX_MMU_BASE       (S5L8940_ARM_IO_BASE + 0x0f10b000U)
 #define S5L8940_SGX_MMU_SIZE       0x1000
 
-#define S5L8940_FMI_BASE           0x01200000
+#define S5L8940_FMI_BASE           (S5L8940_ARM_IO_BASE + 0x01200000U)
 #define S5L8940_FMI_SIZE           0x1000
 
-#define S5L8940_USB_COMPLEX_BASE   0x0f108000
+#define S5L8940_USB_COMPLEX_BASE   (S5L8940_ARM_IO_BASE + 0x0f108000U)
 #define S5L8940_USB_COMPLEX_SIZE   0x1000
 
 #define S5L8940_RAM_BASE           0x80000000
