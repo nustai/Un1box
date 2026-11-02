@@ -1,0 +1,54 @@
+name: N94 real kernel diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine_run_id:
+        description: Successful QEMU verification run containing n94-host-qemu
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host runtime and firmware decoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-0 libpixman-1-0 libssl3 python3-pip
+          python3 -m pip install cryptography
+      - name: Fetch verified emulator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE_RUN: ${{ inputs.engine_run_id }}
+        run: |
+          gh run download "$ENGINE_RUN" --repo "$GITHUB_REPOSITORY" --name n94-host-qemu --dir n94-host
+          chmod +x n94-host/qemu-system-arm
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          for name, expected in json.loads(pathlib.Path('n94-host/models.json').read_text()).items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == expected, f'Stale engine: {name}'
+          PY
+          ./n94-host/qemu-system-arm -M help | grep iPhone-4S
+      - name: Prepare actual stock kernel inputs
+        run: |
+          curl --fail --location --retry 3 --max-time 600 \
+            'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
+          python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
+      - name: Capture actual guest execution
+        timeout-minutes: 3
+        run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces
+      - name: Keep traces, never firmware
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: n94-kernel-traces
+          path: |
+            n94-traces/
+            n94-images/*-layout.json
+          if-no-files-found: warn

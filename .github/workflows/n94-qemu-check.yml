@@ -82,6 +82,26 @@ jobs:
       - name: Execute ARM payload on both n94 machine names and test reset
         run: python3 ci/n94_smoke.py qemu_src/build/qemu-system-arm
 
+      - name: Package verified host emulator for repeatable kernel probes
+        run: |
+          mkdir -p n94-host
+          strip qemu_src/build/qemu-system-arm -o n94-host/qemu-system-arm
+          ldd n94-host/qemu-system-arm > n94-host/ldd.txt
+          git -C qemu_src rev-parse HEAD > n94-host/qemu-revision.txt
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          files = list(pathlib.Path('hw/arm').glob('n94_*.c')) + list(pathlib.Path('hw/arm').glob('s5l8940_*.[ch]'))
+          hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+          pathlib.Path('n94-host/models.json').write_text(json.dumps(hashes, indent=2))
+          PY
+
+      - name: Keep verified host emulator
+        uses: actions/upload-artifact@v4
+        with:
+          name: n94-host-qemu
+          path: n94-host/
+          retention-days: 7
+
       - name: Prepare diagnostic boot images from verified Apple firmware
         if: github.event_name == 'workflow_dispatch' && inputs.kernel_probe
         run: |
