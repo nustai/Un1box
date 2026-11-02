@@ -8,6 +8,7 @@ import hmac
 import json
 import pathlib
 import plistlib
+import shutil
 import struct
 import zipfile
 import zlib
@@ -199,11 +200,38 @@ class HFS:
                     "head": self.fork(descriptor, 0, min(size, 64)).hex()}
         return files
 
+    def export(self, destination):
+        if shutil.disk_usage(destination.parent).free < self.size + (512 << 20):
+            raise ValueError("insufficient free space for the raw HFS volume")
+        with destination.open("xb") as target:
+            target.truncate(self.size)
+            completed = 0
+            for index, (start, size, kind, _, _) in enumerate(self.disk.chunks):
+                lo, hi = max(start, self.start), min(start + size, self.start + self.size)
+                if lo >= hi or kind in (0, 2):
+                    continue
+                chunk = self.disk.chunk(index)
+                target.seek(lo - self.start)
+                target.write(chunk[lo - start:hi - start])
+                completed += hi - lo
+                if completed // (128 << 20) != (completed - (hi - lo)) // (128 << 20):
+                    print(f"Exported {completed >> 20} MiB of HFS data", flush=True)
+        with destination.open("rb") as result:
+            result.seek(1024)
+            if result.read(2) not in (b"H+", b"HX"):
+                raise ValueError("exported HFS header verification failed")
+            result.seek(0)
+            digest = hashlib.sha256()
+            for block in iter(lambda: result.read(8 << 20), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ipsw", type=pathlib.Path)
     parser.add_argument("output", type=pathlib.Path)
+    parser.add_argument("--raw-volume", type=pathlib.Path)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     encrypted = args.output / "n94-rootfs.encrypted.dmg"
@@ -228,6 +256,9 @@ def main():
               "logical_disk_bytes": disk.size, "hfs_volume_bytes": volume.size,
               "allocation_block_bytes": volume.block, "files": files,
               "bootable_device_implemented": False}
+    if args.raw_volume:
+        report["raw_volume_sha256"] = volume.export(args.raw_volume)
+        report["raw_volume_path"] = str(args.raw_volume)
     (args.output / "n94-rootfs-inventory.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2), flush=True)
     crypto.file.close()
