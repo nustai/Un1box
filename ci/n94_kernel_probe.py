@@ -130,8 +130,11 @@ def probe(binary, bundle, output, seconds):
                                 match = re.search(r'R07=([0-9a-fA-F]{8})', state)
                                 frame = qmp('human-monitor-command', {'command-line':
                                             f'x /4wx 0x{int(match.group(1), 16):x}'}) if match else ''
+                                match = re.search(r'R01=([0-9a-fA-F]{8})', state)
+                                object_words = qmp('human-monitor-command', {'command-line':
+                                                   f'x /12wx 0x{int(match.group(1), 16):x}'}) if match else ''
                                 (output / 'follow-breakpoint.json').write_text(json.dumps(
-                                    {'registers': state, 'frame': frame}, indent=2))
+                                    {'registers': state, 'frame': frame, 'argument_object': object_words}, indent=2))
                                 break
                         else:
                             (output / 'follow-breakpoint.txt').write_text('not reached in 30 seconds\n')
