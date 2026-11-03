@@ -20,7 +20,7 @@ def bundle():
     words += [0xEAFFFFFE]
     words[0] = 0xE59F2000 | (len(words) * 4 - 8)  # ldr r2, [pc, #literal]
     words[1] = 0xE59F3000 | (len(words) * 4 - 8)
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<II", 0x32500020, 0x3f100020)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<II", 0x32500020, 0x3f200020)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 
@@ -79,7 +79,7 @@ def execute(binary, directory, machine):
             if process.returncode != 0:
                 errors.seek(0)
                 raise AssertionError(f"QEMU exit {process.returncode}: {errors.read()}")
-            print(f"PASS {machine}: two CPUs, advancing PMGR counter, UART marker, reset and re-execution", flush=True)
+            print(f"PASS {machine}: two CPUs, advancing AIC counter, UART marker, reset and re-execution", flush=True)
         finally:
             if process.poll() is None:
                 process.kill()

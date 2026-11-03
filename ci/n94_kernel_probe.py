@@ -71,7 +71,7 @@ def probe(binary, bundle, output, seconds):
                     values = re.findall(r"0x[0-9a-fA-F]+", clock)
                     if values and int(values[-1], 16) >= 0x80000000:
                         snapshot["clock_mapping"] = qmp("human-monitor-command", {"command-line": "gva2gpa " + values[-1]})
-                    snapshot["pmgr_counter_low"] = qmp("human-monitor-command", {"command-line": "xp /1wx 0x3f100020"})
+                    snapshot["aic_counter_low"] = qmp("human-monitor-command", {"command-line": "xp /1wx 0x3f200020"})
                 snapshots.append(snapshot)
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                 if log.exists() and log.stat().st_size > 8 << 20:

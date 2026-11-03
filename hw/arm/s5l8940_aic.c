@@ -12,6 +12,8 @@
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
+#include "qemu/host-utils.h"
 
 #define TYPE_S5L8940_AIC "s5l8940-aic"
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940AICState, S5L8940_AIC)
@@ -109,6 +111,16 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % S5L8940_AIC_REG_WORDS;
 
+    /* Stock 13G37 mach_absolute_time reads HI/LO/HI at +0x28/+0x20/+0x28.
+     * QMP gva2gpa of its global clock pointer confirms physical 0x3f200000.
+     * TODO(n94): independently calibrate frequency; 24 MHz matches boot DT.
+     */
+    if (offset == 0x20 || offset == 0x28) {
+        uint64_t ticks = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                                 24000000, NANOSECONDS_PER_SECOND);
+        return offset == 0x20 ? (uint32_t)ticks : (uint32_t)(ticks >> 32);
+    }
+
     switch (offset) {
     case 0x00: /* CPU WhoAmI (returns 0 for primary core) */
         val = 0;
@@ -142,6 +154,9 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
 static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     S5L8940AICState *s = opaque;
+    if (offset == 0x20 || offset == 0x28) {
+        return; /* free-running counter */
+    }
     uint32_t word_idx = (offset / 4) % S5L8940_AIC_REG_WORDS;
     s->storage[word_idx] = (uint32_t)value;
 
