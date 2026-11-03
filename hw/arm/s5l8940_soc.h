@@ -38,6 +38,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(S5L8940State, S5L8940_SOC)
 
 #define S5L8940_PL310_BASE         (S5L8940_ARM_IO_BASE + 0x0e000000U)
 #define S5L8940_CIF_BASE           (S5L8940_ARM_IO_BASE + 0x0fd00000U)
+#define S5L8940_CDMA_BASE          (S5L8940_ARM_IO_BASE + 0x07000000U)
+#define S5L8940_CDMA_CRYPTO_BASE   (S5L8940_ARM_IO_BASE + 0x07800000U)
 
 #define S5L8940_PMGR_BASE          (S5L8940_ARM_IO_BASE + 0x0f100000U)
 #define S5L8940_PMGR_SIZE          0x7000
@@ -96,6 +98,7 @@ struct S5L8940State {
     DeviceState *pmgr;
     DeviceState *gpio; /* Partial n94 port bank; interrupt groups TODO. */
     DeviceState *pl310; /* Coherent maintenance; diagnostic geometry and CIF. */
+    DeviceState *cdma; /* Plain scatter/gather subset, AES TODO. */
     DeviceState *uart0; /* DeviceTree boot-console */
     DeviceState *uart1; /* Debug console */
     DeviceState *clcd;  /* Display controller */

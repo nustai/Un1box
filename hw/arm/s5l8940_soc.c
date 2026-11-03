@@ -32,6 +32,8 @@ static void s5l8940_soc_init(Object *obj)
     s->pmgr = qdev_new("s5l8940-pmgr");
     s->gpio = qdev_new("s5l8940-gpio");
     s->pl310 = qdev_new("s5l8940-pl310");
+    s->cdma = qdev_new("s5l8940-cdma");
+    object_property_add_child(obj, "cdma", OBJECT(s->cdma));
     /* UART0 is marked boot-console in the stock n94 DeviceTree. */
     s->uart0 = qdev_new("n94-uart");
     /* UART1 is a separate peripheral, not the selected boot console. */
@@ -80,6 +82,13 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pl310), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 0, S5L8940_PL310_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 1, S5L8940_CIF_BASE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->cdma), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->cdma), 0, S5L8940_CDMA_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->cdma), 1, S5L8940_CDMA_CRYPTO_BASE);
+    for (unsigned i = 0; i < 44; i++) {
+        sysbus_connect_irq(SYS_BUS_DEVICE(s->cdma), i,
+                           qdev_get_gpio_in(s->aic, 0x33 + i));
+    }
 
     /* 3. Realize the boot console (UART0) and the separate UART1. */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart0), &error_fatal);
