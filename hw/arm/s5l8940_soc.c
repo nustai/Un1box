@@ -83,6 +83,9 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(usb_control), 0, 0x3f108000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
+    DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(i2s_switch), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(i2s_switch), 0, 0x3fa01000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pl310), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 0, S5L8940_PL310_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 1, S5L8940_CIF_BASE);

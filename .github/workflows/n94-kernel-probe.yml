@@ -53,8 +53,6 @@ jobs:
           fi
       - name: Capture actual guest execution
         timeout-minutes: 6
-        env:
-          N94_BREAKPOINT: '0x80fc7404'
         run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 120
       - name: Keep traces, never firmware
         if: always()

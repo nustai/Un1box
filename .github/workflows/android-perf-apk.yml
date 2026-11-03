@@ -687,6 +687,7 @@ jobs:
             's5l8940_pl310.c',
             's5l8940_cdma.c',
             's5l8940_usb.c',
+            's5l8940_i2s_switch.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"

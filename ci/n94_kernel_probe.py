@@ -69,8 +69,13 @@ def probe(binary, bundle, output, seconds):
                 debugger.settimeout(10)
                 payload = f'Z0,{int(breakpoint_address, 0):x},2'.encode()
                 debugger.sendall(b'$' + payload + b'#' + f'{sum(payload) & 255:02x}'.encode())
-                reply = debugger.recv(128)
-                if b'OK' not in reply:
+                reply = b''
+                while b'#' not in reply or len(reply.split(b'#', 1)[1]) < 2:
+                    chunk = debugger.recv(128)
+                    if not chunk:
+                        raise RuntimeError('GDB closed before breakpoint reply')
+                    reply += chunk
+                if b'$OK#' not in reply:
                     raise RuntimeError(f'GDB breakpoint rejected: {reply!r}')
                 debugger.sendall(b'+')
             qmp("cont")
@@ -84,7 +89,7 @@ def probe(binary, bundle, output, seconds):
                         raise RuntimeError('R00 missing at USB breakpoint')
                     address = int(match.group(1), 16)
                     mapping = qmp('human-monitor-command', {'command-line': f'gva2gpa 0x{address:x}'})
-                    (output / 'usb-breakpoint.json').write_text(json.dumps(
+                    (output / 'breakpoint.json').write_text(json.dumps(
                         {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping}, indent=2))
                     break
                 qmp("stop")
