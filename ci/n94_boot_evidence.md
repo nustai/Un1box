@@ -200,3 +200,14 @@ phandle 0x0e, but the matching controller is not yet visible in the guest
 registry. The earlier start message alone does not prove registration. The
 trace is in n94_diagnostic_traces/iop-name-bytes/. Root storage and touch
 remain unfinished; the restore launchd result requires a diagnostic override.
+
+Stock AIC start itself waits for `IOPlatformInterruptController` while
+registering its parent interrupt, before publishing its own controller name.
+This was captured in both candidates in run 41682790307. Separate breakpoints
+show the CPU controller does call registerInterruptController with this exact
+name (41683800131), and that call returns R0=0 (41684133790). Subsequent
+breakpoints for AIC publication and IOP completion were not reached within
+30 seconds after that return (41684796701 and 41684348109); nor was the
+instruction after AIC's parent registerInterrupt (41685310428). These are
+time-bounded debugger observations, not proof of the cause or of a permanent
+deadlock. Trace artifacts are saved under n94_diagnostic_traces/.
