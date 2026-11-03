@@ -246,3 +246,12 @@ fault but panicked at PC 0x80877902 on an unmapped register at virtual offset
 0x1c in both boot-args variants. A separate breakpoint probe is required to
 identify its physical address. Its saved v3 screen contains only black and
 an 8-by-16 white rectangle, not a system or SpringBoard screenshot.
+
+Breakpoint run 41692746268 translated that address to 0x39400000, the
+external TV-out node. The explicit diagnostic no-TV-out option removes the
+node from the prepared tree and is off by default. With this option, run
+41693213653 passed the previous fault. The v3 candidate then faulted in the
+display-pipe initialization at 0x80631d1e, VA 0xeecea260; the v2 candidate
+did not reach restore userspace within the sampled period. The v3 screen still
+contains only the black background and 8-by-16 white rectangle. Physical
+translation of the new fault is being checked, not inferred from its name.
