@@ -105,3 +105,13 @@ wrong. At 0x80d96678 the stock driver explicitly visits IDs 9..87, then
 cleans up 87..10 at 0x80d966aa. The model now covers 128 clock words starting
 at +0x1000; exact DT min/max semantics remain TODO. ARM smoke tests clock 55
 and clock 76 separately, including nonzero transitions and OFF=0.
+
+Host build [41609546419](https://github.com/nustai/un1box-n94/actions/runs/41609546419)
+passes the expanded clock regression. Kernel run
+[41611008843](https://github.com/nustai/un1box-n94/actions/runs/41611008843)
+passes both clock waits and reaches a new data abort at PC 0x80d97a2e,
+LR 0x80d972cf, reading MMIO offset +4. The caller maps PL310 region 0;
+its print format resolves to AppleS5L8940XPL310::start.
+Stock n94 /arm-io/pl310 reg = (0x0e000000,0x1000,0x0fd00000,0x2000),
+thus root ranges 0x3e000000 and 0x3fd00000. Neither is currently modeled.
+Next work is PL310/cache-interface behavior, not more performance-table edits.
