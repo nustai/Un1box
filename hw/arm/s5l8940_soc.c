@@ -77,6 +77,10 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* 2. Realize and map PMGR */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pmgr), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
+    /* n94 usb-complex reg 0x0f108000, translated through arm-io ranges. */
+    DeviceState *usb_control = qdev_new("n94-usb-control");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_control), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_control), 0, 0x3f108000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pl310), &error_fatal);
