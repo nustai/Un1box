@@ -44,6 +44,27 @@ def diagnostic_nvram():
     return bytes(result)
 
 
+def diagnostic_performance(pmgr):
+    """Give the virtual fixed-performance domain one reportable state.
+
+    13G37 AppleARMPlatform 0x805536f2..0x80553730 walks eight-byte
+    voltage-states records and stops at the first zero performance value.
+    Stock n94 voltage-states1 is entirely blank (bootloader placeholder).
+    Use the DT's own nominal-performance1 units, not a guessed MHz value.
+    TODO(n94): calibrated voltage-state table and real DVFS transitions.
+    The voltage word remains zero/unknown; this diagnostic is not real DVFS.
+    """
+    table = pmgr.props['voltage-states1'][0]
+    nominal_data = pmgr.props['nominal-performance1'][0]
+    if len(table) != 24 or any(table) or len(nominal_data) != 4:
+        raise ValueError('expected stock n94 blank performance-domain1 table')
+    nominal = struct.unpack('<I', nominal_data)[0]
+    if not nominal:
+        raise ValueError('n94 nominal-performance1 is zero')
+    pmgr.set('voltage-states1', u32(nominal, 0) + bytes(16))
+    return nominal
+
+
 def decrypt_img3(data, key, iv):
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     offset = 20
@@ -201,6 +222,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
     if proxy != bytes(8192):
         raise ValueError('expected the stock n94 empty 8192-byte NVRAM placeholder')
     chosen.set('nvram-proxy-data', diagnostic_nvram())
+    nominal_performance = diagnostic_performance(dt.at('arm-io/pmgr'))
     entropy = secrets.token_bytes(64) if entropy is None else entropy
     if len(entropy) != 64 or not any(entropy):
         raise ValueError("XNU requires 64 bytes of nonzero boot entropy")
@@ -270,6 +292,9 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
               "firmware_property_flags_cleared": cleared_flags,
               "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
               "diagnostic_nvram": {"mode": "volatile-empty-CHRP", "bytes": 8192},
+              "diagnostic_performance": {"domain": 1, "states": 1,
+                                         "nominal_dt_units": nominal_performance,
+                                         "voltage_unknown": True, "dvfs_implemented": False},
               "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
               "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
     (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")

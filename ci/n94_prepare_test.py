@@ -6,7 +6,7 @@ import struct
 import tempfile
 import unittest
 
-from n94_prepare_kernel import Node, prepare, u32, diagnostic_nvram
+from n94_prepare_kernel import Node, prepare, u32, diagnostic_nvram, diagnostic_performance
 
 
 def node(name, children=(), **properties):
@@ -30,6 +30,16 @@ def kernel_walk(data, offset=0):
 
 
 class Preparation(unittest.TestCase):
+    def test_blank_performance_table_has_one_nominal_diagnostic_state(self):
+        pmgr = node('pmgr', **{'voltage-states1': bytes(24), 'nominal-performance1': u32(0x14000)})
+        self.assertEqual(struct.unpack_from('<I', pmgr.props['voltage-states1'][0])[0], 0)
+        self.assertEqual(diagnostic_performance(pmgr), 0x14000)
+        values = list(struct.iter_unpack('<II', pmgr.props['voltage-states1'][0]))
+        # Actual guest stops at the first zero performance, not at buffer end.
+        self.assertEqual(values, [(0x14000, 0), (0, 0), (0, 0)])
+        with self.assertRaisesRegex(ValueError, 'blank performance'):
+            diagnostic_performance(pmgr)
+
     def test_nvram_proxy_advances_through_complete_partitions(self):
         # Reproduce the guest's length read and offset update at 0x803684d0.
         self.assertEqual(struct.unpack_from('<H', bytes(8192), 2)[0] * 16, 0)
@@ -57,7 +67,9 @@ class Preparation(unittest.TestCase):
         for name in ("marketing-hardware-behavior", "marketing-software-behavior"):
             chosen.props[name] = (b"placeholder\0", 0x80000000)
         root = node("device-tree", [node("memory", reg=bytes(8)), chosen,
-                                     node("cpus", [node("cpu0")]), node("vram", reg=bytes(8)), node("pram", reg=bytes(8))])
+                                     node("cpus", [node("cpu0")]), node("vram", reg=bytes(8)), node("pram", reg=bytes(8)),
+                                     node('arm-io', [node('pmgr', **{'voltage-states1': bytes(24),
+                                                                   'nominal-performance1': u32(0x14000)})])])
         raw = root.encode()
         with self.assertRaisesRegex(ValueError, "escaped"):
             kernel_walk(raw)
