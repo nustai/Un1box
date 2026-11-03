@@ -20,10 +20,13 @@ def probe(binary, bundle, output, seconds):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         gdb_port = reservation.getsockname()[1]
+    breakpoint_address = os.environ.get('N94_BREAKPOINT')
+    # Exception tracing can grow tens of MB per second in demand-paged
+    # guests; breakpoint runs prioritize reaching the requested instruction.
+    log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
     command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
-               "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", "in_asm,int,guest_errors,unimp", "-D", str(log)]
-    breakpoint_address = os.environ.get('N94_BREAKPOINT')
+               "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", log_flags, "-D", str(log)]
     if breakpoint_address:
         command += ['-gdb', f'tcp:127.0.0.1:{gdb_port}']
     snapshots = []
@@ -245,6 +248,7 @@ def probe(binary, bundle, output, seconds):
                     exception_counts[match.group(1)] += 1
         (output / 'execution-evidence.json').write_text(json.dumps({
             'note': 'Low addresses are observed translation blocks, not proof of a user process; QEMU in_asm logs translation, not every execution.',
+            'exception_tracing_enabled': not bool(breakpoint_address),
             'low_address_translation_blocks': sum(low_pc.values()),
             'low_address_examples': low_pc.most_common(32),
             'logged_exceptions': dict(exception_counts),
