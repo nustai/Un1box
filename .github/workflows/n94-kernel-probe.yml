@@ -64,6 +64,9 @@ jobs:
         env:
           N94_BREAKPOINT: ${{ inputs.breakpoint }}
         run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 120
+      - name: Verify observed restore userspace
+        if: inputs.diagnostic_no_secure_root && inputs.restore_ramdisk && inputs.breakpoint == ''
+        run: python3 ci/n94_restore_evidence.py n94-images n94-traces
       - name: Keep traces, never firmware
         if: always()
         uses: actions/upload-artifact@v4
