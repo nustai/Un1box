@@ -83,6 +83,12 @@ def probe(binary, bundle, output, seconds):
                         snapshot["clock_mapping"] = qmp("human-monitor-command", {"command-line": "gva2gpa " + values[-1]})
                     snapshot["aic_counter_low"] = qmp("human-monitor-command", {"command-line": "xp /1wx 0x3f200020"})
                 snapshots.append(snapshot)
+                if serial.exists():
+                    uart_text = serial.read_text(errors='replace')
+                    fault = re.search(r'fault_addr=(0x[0-9a-fA-F]+)', uart_text)
+                    if fault:
+                        snapshot['fault_mapping'] = qmp('human-monitor-command', {
+                            'command-line': 'gva2gpa ' + fault.group(1)})
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                 if log.exists() and log.stat().st_size > 8 << 20:
                     break
