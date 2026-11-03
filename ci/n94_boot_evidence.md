@@ -147,3 +147,28 @@ thus root bases 0x37000000/0x37800000. DT cdma-version=3, max-channel=44,
 interrupt list has 44 entries 0x33..0x5e. Driver 0x80c8e790 maps region 0
 into the pointer later used by that store. A real DMA/channel/IRQ model is
 not yet present; register backing alone would not establish working DMA.
+
+## Initial CDMA transaction model (revision 14)
+
+The previous paragraph describes the pre-CDMA baseline. The dedicated
+s5l8940_cdma.c now implements a bounded plain FIFO subset with real DMA
+AddressSpace transactions. Stock n94 driver anchors: 0x80c8e868 global
+channel disable, 0x80c8faac allocation of 128 descriptors at 32-byte stride,
+0x80c8fd9e channel configuration, 0x80c8ff4e final descriptor flags,
+0x80c8ff7a submission and 0x80c90468 stop/reset. Descriptor words next,
+flags, buffer and length are inferred from this driver; hardware validation
+of flag/status interpretations is still TODO(n94).
+
+Channels 1..44 connect directly to the DT-listed AIC inputs 0x33..0x5e.
+Completion output is level-triggered while enabled and pending; QTest
+checks this pin separately from CPU delivery through the unfinished AIC.
+The memory buffer increments while the peripheral FIFO address is fixed.
+Malformed addresses, excessive chains, unsupported commands and crypto
+configuration produce explicit errors. The synchronous 16 MiB/128-entry
+bound is a diagnostic implementation limit, not a measured A5 capability.
+AES, request handshakes and asynchronous scheduling remain unimplemented.
+
+Build 41620406791 compiled and linked the new model and passed ARM smoke,
+but QTest stopped before any DMA assertion: irq_intercept_out needs the
+named sysbus-irq GPIO group. Test corrected in 5e625a37; repeat run
+41623585014 must pass before claiming transaction verification.
