@@ -81,6 +81,9 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *usb_control = qdev_new("n94-usb-control");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_control), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(usb_control), 0, 0x3f108000);
+    DeviceState *sgx_control = qdev_new("n94-sgx-control");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(sgx_control), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(sgx_control), 0, 0x3f10b000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
