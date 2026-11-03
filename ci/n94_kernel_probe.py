@@ -113,9 +113,13 @@ def probe(binary, bundle, output, seconds):
                     address = int(match.group(1), 16)
                     mapping = qmp('human-monitor-command', {'command-line': f'gva2gpa 0x{address:x}'})
                     object_words = qmp('human-monitor-command', {'command-line': f'x /24wx 0x{address:x}'})
+                    first_frame_match = re.search(r'R07=([0-9a-fA-F]{8})', registers)
+                    first_frame = int(first_frame_match.group(1), 16) if first_frame_match else 0
+                    frame_before = qmp('human-monitor-command', {'command-line':
+                                       f'x /64wx 0x{first_frame:x}'}) if first_frame else ''
                     (output / 'breakpoint.json').write_text(json.dumps(
                         {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping,
-                         'object_words': object_words}, indent=2))
+                         'object_words': object_words, 'initial_frame': frame_before}, indent=2))
                     breakpoint_hit = True
                     follow = os.environ.get('N94_FOLLOW_BREAKPOINT')
                     if follow:
@@ -149,6 +153,9 @@ def probe(binary, bundle, output, seconds):
                             qmp('stop')
                             state = qmp('human-monitor-command', {'command-line': 'info registers'})
                             evidence = {'status': 'not reached in 30 seconds', 'registers': state}
+                            if first_frame:
+                                evidence['initial_thread_frame_after_wait'] = qmp('human-monitor-command', {
+                                    'command-line': f'x /64wx 0x{first_frame:x}'})
                             for register, label in (('R13', 'stack'), ('R07', 'frame')):
                                 match = re.search(register + r'=([0-9a-fA-F]{8})', state)
                                 if match:
