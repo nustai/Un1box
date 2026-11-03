@@ -2,6 +2,7 @@
 """Collect bounded traces of an actual kernel; successful collection is not an iOS boot pass."""
 import argparse
 import json
+import os
 import pathlib
 import re
 import socket
@@ -15,14 +16,20 @@ def probe(binary, bundle, output, seconds):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        gdb_port = reservation.getsockname()[1]
     command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
                "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", "in_asm,int,guest_errors,unimp", "-D", str(log)]
+    if os.environ.get('N94_USB_BREAKPOINT') == '1':
+        command += ['-gdb', f'tcp:127.0.0.1:{gdb_port}']
     snapshots = []
     failure = None
     with (output / "stderr.log").open("w+") as errors:
         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
         connection = None
+        debugger = None
         try:
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline and process.poll() is None:
@@ -56,10 +63,29 @@ def probe(binary, bundle, output, seconds):
                         return reply["return"]
 
             qmp("qmp_capabilities")
+            if os.environ.get('N94_USB_BREAKPOINT') == '1':
+                debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
+                debugger.settimeout(10)
+                payload = b'Z0,80d2747a,2'
+                debugger.sendall(b'$' + payload + b'#' + f'{sum(payload) & 255:02x}'.encode())
+                reply = debugger.recv(128)
+                if b'OK' not in reply:
+                    raise RuntimeError(f'GDB breakpoint rejected: {reply!r}')
+                debugger.sendall(b'+')
             qmp("cont")
             started = time.monotonic()
             for sample in range(max(1, int(seconds / 2))):
                 time.sleep(0.25 if sample == 0 else 2)
+                if debugger is not None and qmp('query-status')['status'] == 'debug':
+                    registers = qmp('human-monitor-command', {'command-line': 'info registers'})
+                    match = re.search(r'R00=([0-9a-fA-F]{8})', registers)
+                    if not match:
+                        raise RuntimeError('R00 missing at USB breakpoint')
+                    address = int(match.group(1), 16)
+                    mapping = qmp('human-monitor-command', {'command-line': f'gva2gpa 0x{address:x}'})
+                    (output / 'usb-breakpoint.json').write_text(json.dumps(
+                        {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping}, indent=2))
+                    break
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
                 snapshot = {"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers}
@@ -108,6 +134,8 @@ def probe(binary, bundle, output, seconds):
                 process.wait()
             if connection is not None:
                 connection.close()
+            if debugger is not None:
+                debugger.close()
     # Retain a bounded head and tail, rather than upload repeated multi-GB MMIO polls.
     log_size = log.stat().st_size if log.exists() else 0
     if log.exists():
