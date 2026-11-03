@@ -91,6 +91,7 @@ struct S5L8940State {
     /* Submodules */
     DeviceState *aic;
     DeviceState *pmgr;
+    DeviceState *gpio; /* Partial n94 port bank; interrupt groups TODO. */
     DeviceState *uart0; /* DeviceTree boot-console */
     DeviceState *uart1; /* Debug console */
     DeviceState *clcd;  /* Display controller */

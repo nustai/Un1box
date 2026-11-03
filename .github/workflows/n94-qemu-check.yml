@@ -51,6 +51,7 @@ jobs:
             's5l8940_soc.c',
             's5l8940_aic.c',
             's5l8940_pmgr.c',
+            's5l8940_gpio.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"

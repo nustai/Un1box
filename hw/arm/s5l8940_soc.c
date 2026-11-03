@@ -30,6 +30,7 @@ static void s5l8940_soc_init(Object *obj)
     s->aic = qdev_new("s5l8940-aic");
     /* PMGR Power Manager */
     s->pmgr = qdev_new("s5l8940-pmgr");
+    s->gpio = qdev_new("s5l8940-gpio");
     /* UART0 is marked boot-console in the stock n94 DeviceTree. */
     s->uart0 = qdev_new("n94-uart");
     /* UART1 is a separate peripheral, not the selected boot console. */
@@ -73,6 +74,8 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* 2. Realize and map PMGR */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pmgr), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
 
     /* 3. Realize the boot console (UART0) and the separate UART1. */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart0), &error_fatal);

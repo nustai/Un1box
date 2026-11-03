@@ -13,14 +13,19 @@ import time
 def bundle():
     # UART0 is boot-console in the stock n94 DeviceTree.
     # Refuse to report a working CPU boot if the real early-XNU clock is frozen.
-    words = [0, 0, 0xE5934000, 0xE3A050FF, 0xE2555001, 0x1AFFFFFD,
+    # Each entry must see reset GPIO=0, then preserve a port write. On the
+    # second entry this proves reset cleared the previous value, not just RAM.
+    words = [0, 0, 0, 0xE5974000, 0xE3540000, 0x1AFFFFFE,
+             0xE3A0405A, 0xE5874000, 0xE5976000, 0xE1540006, 0x1AFFFFFE,
+             0xE5934000, 0xE3A050FF, 0xE2555001, 0x1AFFFFFD,
              0xE5936000, 0xE1560004, 0x0AFFFFFE]
     for byte in b"N94_SMOKE\n":
         words += [0xE3A01000 | byte, 0xE5821000]  # mov r1, #byte; str r1, [r2]
     words += [0xEAFFFFFE]
     words[0] = 0xE59F2000 | (len(words) * 4 - 8)  # ldr r2, [pc, #literal]
     words[1] = 0xE59F3000 | (len(words) * 4 - 8)
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<II", 0x32500020, 0x3f200020)
+    words[2] = 0xE59F7000 | (len(words) * 4 - 8)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<III", 0x32500020, 0x3f200020, 0x3fa00000)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 
@@ -84,7 +89,7 @@ def execute(binary, directory, machine):
             if process.returncode != 0:
                 errors.seek(0)
                 raise AssertionError(f"QEMU exit {process.returncode}: {errors.read()}")
-            print(f"PASS {machine}: two CPUs, advancing AIC counter, UART marker, reset and re-execution", flush=True)
+            print(f"PASS {machine}: two CPUs, AIC INFO/counter, GPIO port write/read/reset, UART, re-execution", flush=True)
         finally:
             if process.poll() is None:
                 process.kill()
