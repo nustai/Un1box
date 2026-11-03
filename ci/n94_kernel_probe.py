@@ -140,6 +140,11 @@ def probe(binary, bundle, output, seconds):
                 qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
             except RuntimeError as error:
                 (output / 'screen-error.txt').write_text(str(error) + '\n')
+            framebuffer = (output / 'boot-framebuffer.raw').resolve()
+            result = qmp('human-monitor-command', {'command-line':
+                         f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
+            if result or not framebuffer.is_file():
+                (output / 'framebuffer-error.txt').write_text(str(result) + '\n')
             stream.write(b'{"execute":"quit"}\n')
             process.wait(timeout=10)
         except Exception as error:
