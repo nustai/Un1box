@@ -93,11 +93,13 @@ class Preparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory)
             for version in (2, 3):
-                prepare(kernel, raw, version, output)
+                prepare(kernel, raw, version, output, diagnostic_single_cpu=(version == 3))
                 image = (output / f"n94-v{version}.kboot").read_bytes()
                 magic, base, entry, args, length = struct.unpack_from("<8s4I", image, len(image) - 24)
                 self.assertEqual((magic, base, entry, length), (b"N94KBOOT", 0x80000000, 0x80001000, len(image) - 24))
                 self.assertEqual(struct.unpack_from("<HH", image, args - base), (1, version))
+                command = image[args - base + 56:args - base + 312].split(b'\0', 1)[0]
+                self.assertEqual(b'cpus=1' in command, version == 3)
                 top = struct.unpack_from("<I", image, args - base + 16)[0]
                 dt, size = struct.unpack_from("<II", image, args - base + 48)
                 self.assertGreaterEqual(dt, entry + 4096)
@@ -115,6 +117,7 @@ class Preparation(unittest.TestCase):
                 self.assertGreater(pram_size, 0)
                 self.assertLessEqual(pram_pa + pram_size, base + (512 << 20))
                 report = json.loads((output / f"n94-v{version}-layout.json").read_text())
+                self.assertEqual(report['diagnostic_single_cpu'], version == 3)
                 self.assertEqual(report["firmware_property_flags_cleared"], 2)
 
 
