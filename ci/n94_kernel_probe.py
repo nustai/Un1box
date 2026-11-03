@@ -22,7 +22,8 @@ def probe(binary, bundle, output, seconds):
     command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
                "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", "in_asm,int,guest_errors,unimp", "-D", str(log)]
-    if os.environ.get('N94_USB_BREAKPOINT') == '1':
+    breakpoint_address = os.environ.get('N94_BREAKPOINT')
+    if breakpoint_address:
         command += ['-gdb', f'tcp:127.0.0.1:{gdb_port}']
     snapshots = []
     failure = None
@@ -63,10 +64,10 @@ def probe(binary, bundle, output, seconds):
                         return reply["return"]
 
             qmp("qmp_capabilities")
-            if os.environ.get('N94_USB_BREAKPOINT') == '1':
+            if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
                 debugger.settimeout(10)
-                payload = b'Z0,80d2747a,2'
+                payload = f'Z0,{int(breakpoint_address, 0):x},2'.encode()
                 debugger.sendall(b'$' + payload + b'#' + f'{sum(payload) & 255:02x}'.encode())
                 reply = debugger.recv(128)
                 if b'OK' not in reply:
