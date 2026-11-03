@@ -166,6 +166,20 @@ def probe(binary, bundle, output, seconds):
             'low_address_examples': low_pc.most_common(32),
             'logged_exceptions': dict(exception_counts),
         }, indent=2))
+        # Preserve surrounding control flow before truncation. This is useful
+        # when a device start routine calls another driver and never returns.
+        starts = ('0x811a875e:', '0x80e4b560:', '0x80551744:')
+        with log.open(errors='replace') as source, (output / 'startup-flow.log').open('w') as target:
+            remaining, seen = 0, set()
+            for line in source:
+                for marker in starts:
+                    if line.startswith(marker) and marker not in seen:
+                        seen.add(marker)
+                        remaining = 2000
+                        target.write(f'\n--- following {marker} ---\n')
+                if remaining:
+                    target.write(line)
+                    remaining -= 1
         # Preserve actual 13G37 driver instructions before truncating repeated
         # exception output; otherwise the interesting initialization is lost.
         ranges = ((0x80d97200, 0x80d97b00), (0x80c8e000, 0x80c92000),
