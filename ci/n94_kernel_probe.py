@@ -98,6 +98,8 @@ def probe(binary, bundle, output, seconds):
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
                 snapshot = {"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers}
                 if sample in (0, 3) or sample == max(1, int(seconds / 2)) - 1:
+                    for command_name, label in (('info irq', 'irq_info'), ('info pic', 'pic_info')):
+                        snapshot[label] = qmp('human-monitor-command', {'command-line': command_name})
                     # Frame pointers and stack words help identify a wait loop
                     # when the stock release kernel omits a UART diagnostic.
                     for register, label, words in (('R13', 'stack', 32), ('R07', 'frame', 8)):
