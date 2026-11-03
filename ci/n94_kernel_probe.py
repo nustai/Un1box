@@ -113,7 +113,8 @@ def probe(binary, bundle, output, seconds):
     if log.exists():
         # Preserve actual 13G37 driver instructions before truncating repeated
         # exception output; otherwise the interesting initialization is lost.
-        ranges = ((0x80d97200, 0x80d97b00), (0x80c8e000, 0x80c92000))
+        ranges = ((0x80d97200, 0x80d97b00), (0x80c8e000, 0x80c92000),
+                  (0x80d26000, 0x80d27a00))  # stock n94 USB driver
         with log.open(errors='replace') as source, (output / 'driver-init.log').open('w') as target:
             selected, block_bytes, retained = False, 0, 0
             for line in source:
