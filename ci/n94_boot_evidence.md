@@ -83,3 +83,16 @@ default thus leaves one slot. A separate +0x300 backing register now resets
 to diagnostic zero (no bootloader-reserved slots), preserving zero writes.
 Full register fields and the physical hardware/bootloader reset snapshot
 remain unknown; zero is an explicit virtual boot ownership choice.
+
+Run [41606693696](https://github.com/nustai/un1box-n94/actions/runs/41606693696)
+passes both earlier panics, but both variants spend 120 seconds polling
+device-clock offset 0x1130. The last PC is repeatedly 0x80d96c72 (MMIO read),
+LR 0x80d96baf. The loop at 0x80d96bae XORs the value with itself shifted
+right four and waits for its low nibble to become zero: target and actual
+must agree. The generic backing store returned 0xf even after writing OFF=0.
+The n94 driver computes register=0x1000+clock_id*4 at 0x80d96b58; DT
+device-clocks-min/max are 56/128. This bounded clock range now stores target
+and mirrors it into actual immediately, preserving zero and other bits.
+This models synchronous virtual transitions; dependencies and latency remain
+TODO. ARM smoke explicitly writes target 3 (expects actual/target 0x33), then
+OFF=0 (expects zero), preventing the original fallback behavior from passing.
