@@ -63,6 +63,16 @@ def probe(binary, bundle, output, seconds):
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
                 snapshot = {"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers}
+                if sample in (0, 3) or sample == max(1, int(seconds / 2)) - 1:
+                    # Frame pointers and stack words help identify a wait loop
+                    # when the stock release kernel omits a UART diagnostic.
+                    for register, label, words in (('R13', 'stack', 32), ('R07', 'frame', 8)):
+                        match = re.search(register + r'=([0-9a-fA-F]{8})', registers)
+                        if match:
+                            address = int(match.group(1), 16)
+                            if address >= 0x80000000:
+                                snapshot[label] = qmp('human-monitor-command', {
+                                    'command-line': f'x /{words}wx 0x{address:x}'})
                 if sample == 0 or sample == 3:
                     # Stock 13G37 mach_absolute_time uses the pointer at this
                     # global; capture the actual MMU translation, not a guess.

@@ -269,6 +269,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
               "root_filesystem": "restore-ramdisk" if ramdisk is not None else "absent",
               "firmware_property_flags_cleared": cleared_flags,
               "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
+              "diagnostic_nvram": {"mode": "volatile-empty-CHRP", "bytes": 8192},
               "clock_assumptions_hz": {"fixed": 24000000, "timebase": 24000000},
               "kernel_sha256": hashlib.sha256(kernel).hexdigest(), "raw_dt_sha256": hashlib.sha256(raw_dt).hexdigest()}
     (output / f"n94-v{version}-layout.json").write_text(json.dumps(report, indent=2) + "\n")
