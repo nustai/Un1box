@@ -17,6 +17,9 @@
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940PMGRState, S5L8940_PMGR)
 
 #define S5L8940_PMGR_WORDS (0x7000 / 4)
+/* n94 device-clocks-min/max are 56/128; driver register = 0x1000 + id*4. */
+#define N94_DEVICE_CLOCK_FIRST (0x1000 + 56 * 4)
+#define N94_DEVICE_CLOCK_END   (0x1000 + 128 * 4)
 
 struct S5L8940PMGRState {
     SysBusDevice parent_obj;
@@ -35,6 +38,10 @@ static uint64_t s5l8940_pmgr_read(void *opaque, hwaddr offset, unsigned size)
     S5L8940PMGRState *s = opaque;
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % S5L8940_PMGR_WORDS;
+
+    if (offset >= N94_DEVICE_CLOCK_FIRST && offset < N94_DEVICE_CLOCK_END) {
+        return s->storage[word_idx];
+    }
 
     switch (offset) {
     case 0x300:
@@ -78,6 +85,15 @@ static void s5l8940_pmgr_write(void *opaque, hwaddr offset, uint64_t value, unsi
 {
     S5L8940PMGRState *s = opaque;
     uint32_t word_idx = (offset / 4) % S5L8940_PMGR_WORDS;
+    if (offset >= N94_DEVICE_CLOCK_FIRST && offset < N94_DEVICE_CLOCK_END) {
+        /* 13G37 0x80d96bae waits until low target and high actual nibble
+         * agree. Complete the virtual domain transition synchronously.
+         * Preserve other control bits and meaningful OFF=0 writes.
+         * TODO(n94): power-domain dependencies and transition latency.
+         */
+        s->storage[word_idx] = (value & ~0xf0U) | ((value & 0xf) << 4);
+        return;
+    }
     s->storage[word_idx] = (uint32_t)value;
 
     switch (offset) {
@@ -130,6 +146,10 @@ static void s5l8940_pmgr_init(Object *obj)
     }
     /* Diagnostic boot owns no preallocated performance-state slots. */
     s->storage[0x300 / 4] = 0;
+    for (unsigned offset = N94_DEVICE_CLOCK_FIRST;
+         offset < N94_DEVICE_CLOCK_END; offset += 4) {
+        s->storage[offset / 4] = 0xff; /* diagnostic active target/current */
+    }
 
     memory_region_init_io(&s->iomem, obj, &s5l8940_pmgr_ops, s, "s5l8940-pmgr", 0x7000);
     sysbus_init_mmio(dev, &s->iomem);
