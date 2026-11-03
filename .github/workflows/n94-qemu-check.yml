@@ -3,10 +3,10 @@ name: N94 iPhone 4S QEMU Syntax & Object Verification
 on:
   push:
     branches: [ main ]
-    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', '.github/workflows/n94-qemu-check.yml' ]
+    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', '.github/workflows/n94-qemu-check.yml' ]
   pull_request:
     branches: [ main ]
-    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', '.github/workflows/n94-qemu-check.yml' ]
+    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', '.github/workflows/n94-qemu-check.yml' ]
   workflow_dispatch:
     inputs:
       kernel_probe:

@@ -91,7 +91,7 @@ def execute(binary, directory):
                     writel(BASE, 2)  # unmask channel 1, whose IRQ pin is 0
 
                 qmp('qmp_capabilities')
-                request('irq_intercept_out /machine/soc/cdma')
+                request('irq_intercept_out /machine/soc/cdma sysbus-irq')
                 # Read a real UART status register repeatedly into guest RAM.
                 sentinel = bytes([0xa5]) * 32
                 write(BUFFER, sentinel)
