@@ -112,8 +112,10 @@ def probe(binary, bundle, output, seconds):
                         raise RuntimeError('R00 missing at USB breakpoint')
                     address = int(match.group(1), 16)
                     mapping = qmp('human-monitor-command', {'command-line': f'gva2gpa 0x{address:x}'})
+                    object_words = qmp('human-monitor-command', {'command-line': f'x /24wx 0x{address:x}'})
                     (output / 'breakpoint.json').write_text(json.dumps(
-                        {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping}, indent=2))
+                        {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping,
+                         'object_words': object_words}, indent=2))
                     breakpoint_hit = True
                     follow = os.environ.get('N94_FOLLOW_BREAKPOINT')
                     if follow:
