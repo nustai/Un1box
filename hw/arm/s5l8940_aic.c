@@ -315,11 +315,29 @@ static void s5l8940_aic_init(Object *obj)
     qdev_init_gpio_in(DEVICE(obj), s5l8940_aic_set_irq, S5L8940_AIC_NUM_IRQS);
 }
 
+static void s5l8940_aic_reset(DeviceState *dev)
+{
+    S5L8940AICState *s = S5L8940_AIC(dev);
+    timer_del(s->timer0);
+    s->timer0_count = 0;
+    s->timer0_enabled = false;
+    s->timer0_pending = false;
+    memset(s->enabled, 0, sizeof(s->enabled));
+    memset(s->pending, 0, sizeof(s->pending));
+    s5l8940_aic_update(s);
+}
+
+static void s5l8940_aic_class_init(ObjectClass *klass, const void *data)
+{
+    device_class_set_legacy_reset(DEVICE_CLASS(klass), s5l8940_aic_reset);
+}
+
 static const TypeInfo s5l8940_aic_info = {
     .name          = TYPE_S5L8940_AIC,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(S5L8940AICState),
     .instance_init = s5l8940_aic_init,
+    .class_init = s5l8940_aic_class_init,
 };
 
 static void s5l8940_aic_register_types(void)
