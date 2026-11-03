@@ -240,6 +240,7 @@ def probe(binary, bundle, output, seconds):
                   (0x80e4a000, 0x80e5a000),  # AppleIOPFMI
                   (0x8108f000, 0x81097000),  # EmbeddedIOP
                   (0x811a8000, 0x811ab000),  # AppleA5IOP
+                  (0x80f09000, 0x80f0d000),  # AppleInterruptController
                   (0x80849000, 0x80857000))  # IOCryptoAcceleratorFamily
         with log.open(errors='replace') as source, (output / 'driver-init.log').open('w') as target:
             selected, block_bytes, retained = False, 0, 0
