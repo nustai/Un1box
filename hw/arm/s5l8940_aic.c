@@ -47,6 +47,10 @@ struct S5L8940AICState {
     /* Full register backing store to handle all vendor control and status registers */
     uint32_t storage[S5L8940_AIC_REG_WORDS];
     unsigned diagnostic_accesses;
+    QEMUTimer *timer0;
+    bool timer0_enabled;
+    bool timer0_pending;
+    uint32_t timer0_count;
 };
 
 static void s5l8940_aic_update(S5L8940AICState *s)
@@ -88,7 +92,29 @@ static void s5l8940_aic_update(S5L8940AICState *s)
         }
 
         qemu_set_irq(s->irq_out[cpu], has_irq);
-        qemu_set_irq(s->fiq_out[cpu], has_fiq);
+        qemu_set_irq(s->fiq_out[cpu], has_fiq || (cpu == 0 && s->timer0_pending));
+    }
+}
+
+/* TODO(n94): verify control/ack semantics and timer clock on physical A5.
+ * 13G37 programs +2014 with a relative tick count via 0x800c8c20,
+ * and initialization writes 1 to +2010 and +2018. FIQ routing and 24 MHz
+ * are diagnostic hypotheses, not a claim of complete timer hardware. */
+static void n94_timer0_expired(void *opaque)
+{
+    S5L8940AICState *s = opaque;
+    if (s->timer0_enabled) {
+        s->timer0_pending = true;
+        s5l8940_aic_update(s);
+    }
+}
+
+static void n94_timer0_schedule(S5L8940AICState *s)
+{
+    timer_del(s->timer0);
+    if (s->timer0_enabled) {
+        uint64_t ns = muldiv64(s->timer0_count, NANOSECONDS_PER_SECOND, 24000000);
+        timer_mod_ns(s->timer0, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MAX(ns, 1));
     }
 }
 
@@ -128,6 +154,15 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
         uint64_t ticks = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
                                  24000000, NANOSECONDS_PER_SECOND);
         return offset == 0x20 ? (uint32_t)ticks : (uint32_t)(ticks >> 32);
+    }
+    if (offset == 0x2010) {
+        return s->timer0_enabled;
+    }
+    if (offset == 0x2014) {
+        return s->timer0_count;
+    }
+    if (offset == 0x2018) {
+        return s->timer0_pending;
     }
 
     switch (offset) {
@@ -175,6 +210,25 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
     }
     if (offset == 0x20 || offset == 0x28) {
         return; /* free-running counter */
+    }
+    if (offset == 0x2010) {
+        s->timer0_enabled = value & 1;
+        n94_timer0_schedule(s);
+        return;
+    }
+    if (offset == 0x2014) {
+        s->timer0_count = value;
+        s->timer0_pending = false;
+        n94_timer0_schedule(s);
+        s5l8940_aic_update(s);
+        return;
+    }
+    if (offset == 0x2018) {
+        if (value & 1) {
+            s->timer0_pending = false;
+            s5l8940_aic_update(s);
+        }
+        return;
     }
     uint32_t word_idx = (offset / 4) % S5L8940_AIC_REG_WORDS;
     s->storage[word_idx] = (uint32_t)value;
@@ -229,6 +283,7 @@ static void s5l8940_aic_init(Object *obj)
     SysBusDevice *dev = SYS_BUS_DEVICE(obj);
 
     memory_region_init_io(&s->iomem, obj, &s5l8940_aic_ops, s, "s5l8940-aic", 0x10000);
+    s->timer0 = timer_new_ns(QEMU_CLOCK_VIRTUAL, n94_timer0_expired, s);
     sysbus_init_mmio(dev, &s->iomem);
 
     /* 4 IRQ output lines:
