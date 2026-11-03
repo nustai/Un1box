@@ -189,3 +189,14 @@ back. This is Apple's bundled driver name, not a board model imported
 into this implementation. The physical mapping is not yet established:
 post-panic gva2gpa returns Unmapped. USB is the next observed blocker;
 ios_boot_confirmed remains false for both candidates.
+
+## IOP interrupt-controller lookup
+
+The stock n94 AppleA5IOP startup reaches IOService::registerInterrupt but
+waits inside IOPlatformExpert::lookUpInterruptController. In diagnostic run
+41665499004, both boot-args variants captured the actual OSSymbol bytes:
+`IOInterruptController0E000000`. This matches the n94 iop interrupt-parent
+phandle 0x0e, but the matching controller is not yet visible in the guest
+registry. The earlier start message alone does not prove registration. The
+trace is in n94_diagnostic_traces/iop-name-bytes/. Root storage and touch
+remain unfinished; the restore launchd result requires a diagnostic override.
