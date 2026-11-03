@@ -92,8 +92,16 @@ LR 0x80d96baf. The loop at 0x80d96bae XORs the value with itself shifted
 right four and waits for its low nibble to become zero: target and actual
 must agree. The generic backing store returned 0xf even after writing OFF=0.
 The n94 driver computes register=0x1000+clock_id*4 at 0x80d96b58; DT
-device-clocks-min/max are 56/128. This bounded clock range now stores target
+device-clocks-min/max are 56/128. The clock range now stores target
 and mirrors it into actual immediately, preserving zero and other bits.
 This models synchronous virtual transitions; dependencies and latency remain
 TODO. ARM smoke explicitly writes target 3 (expects actual/target 0x33), then
 OFF=0 (expects zero), preventing the original fallback behavior from passing.
+
+Run [41608657724](https://github.com/nustai/un1box-n94/actions/runs/41608657724)
+passes the wait on clock 76 but reaches the same wait on clock 55 (+0x10dc).
+The initial assumption that DT min=56 bounded the hardware register IDs was
+wrong. At 0x80d96678 the stock driver explicitly visits IDs 9..87, then
+cleans up 87..10 at 0x80d966aa. The model now covers 128 clock words starting
+at +0x1000; exact DT min/max semantics remain TODO. ARM smoke tests clock 55
+and clock 76 separately, including nonzero transitions and OFF=0.
