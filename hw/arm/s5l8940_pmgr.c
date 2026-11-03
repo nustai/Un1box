@@ -12,6 +12,7 @@
 #include "hw/core/irq.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
+#include "qemu/host-utils.h"
 
 #define TYPE_S5L8940_PMGR "s5l8940-pmgr"
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940PMGRState, S5L8940_PMGR)
@@ -35,6 +36,17 @@ static uint64_t s5l8940_pmgr_read(void *opaque, hwaddr offset, unsigned size)
     S5L8940PMGRState *s = opaque;
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % S5L8940_PMGR_WORDS;
+
+    /* Stock n94 _mach_absolute_time at 0x800c8be0 reads HI/LO/HI
+     * at +0x28/+0x20/+0x28. The DT identifies this PMGR as device_type=timer.
+     * Keep it on QEMU virtual time so it stops when the guest is paused.
+     * 24 MHz matches the fixed/timebase frequency supplied by our boot image.
+     */
+    if (offset == 0x20 || offset == 0x28) {
+        uint64_t ticks = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                                 24000000, NANOSECONDS_PER_SECOND);
+        return offset == 0x20 ? (uint32_t)ticks : (uint32_t)(ticks >> 32);
+    }
 
     switch (offset) {
     case 0x00 ... 0x1fc: { /* Clock Gates */
@@ -68,6 +80,9 @@ static uint64_t s5l8940_pmgr_read(void *opaque, hwaddr offset, unsigned size)
 static void s5l8940_pmgr_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     S5L8940PMGRState *s = opaque;
+    if (offset == 0x20 || offset == 0x28) {
+        return; /* free-running counter, not a clock-gate backing register */
+    }
     uint32_t word_idx = (offset / 4) % S5L8940_PMGR_WORDS;
     s->storage[word_idx] = (uint32_t)value;
 
