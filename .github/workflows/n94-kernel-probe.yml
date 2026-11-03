@@ -18,6 +18,10 @@ on:
         description: Diagnostic only - remove stock md secure-root policy (insecure)
         type: boolean
         default: false
+      follow_breakpoint:
+        description: Optional second breakpoint after the first stop
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -63,6 +67,7 @@ jobs:
         timeout-minutes: 6
         env:
           N94_BREAKPOINT: ${{ inputs.breakpoint }}
+          N94_FOLLOW_BREAKPOINT: ${{ inputs.follow_breakpoint }}
         run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 120
       - name: Verify observed restore userspace
         if: inputs.diagnostic_no_secure_root && inputs.restore_ramdisk && inputs.breakpoint == ''

@@ -69,17 +69,38 @@ def probe(binary, bundle, output, seconds):
             if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
                 debugger.settimeout(10)
-                payload = f'Z0,{int(breakpoint_address, 0):x},2'.encode()
-                debugger.sendall(b'$' + payload + b'#' + f'{sum(payload) & 255:02x}'.encode())
-                reply = b''
-                while b'#' not in reply or len(reply.split(b'#', 1)[1]) < 2:
-                    chunk = debugger.recv(128)
-                    if not chunk:
-                        raise RuntimeError('GDB closed before breakpoint reply')
-                    reply += chunk
-                if b'$OK#' not in reply:
-                    raise RuntimeError(f'GDB breakpoint rejected: {reply!r}')
-                debugger.sendall(b'+')
+                def gdb_command(command):
+                    payload = command.encode()
+                    debugger.sendall(b'$' + payload + b'#' + f'{sum(payload) & 255:02x}'.encode())
+                    while True:
+                        byte = debugger.recv(1)
+                        if not byte:
+                            raise RuntimeError('GDB closed before reply')
+                        if byte != b'$':
+                            continue
+                        packet = bytearray()
+                        while True:
+                            byte = debugger.recv(1)
+                            if not byte:
+                                raise RuntimeError('GDB closed during packet')
+                            if byte == b'#':
+                                break
+                            packet.extend(byte)
+                        checksum = debugger.recv(2)
+                        while len(checksum) < 2:
+                            more = debugger.recv(2 - len(checksum))
+                            if not more:
+                                raise RuntimeError('GDB checksum truncated')
+                            checksum += more
+                        if int(checksum, 16) != sum(packet) & 255:
+                            raise RuntimeError('GDB reply checksum mismatch')
+                        debugger.sendall(b'+')
+                        if packet[:1] in (b'T', b'S'):
+                            continue  # pending asynchronous stop notification
+                        if packet != b'OK':
+                            raise RuntimeError(f'GDB command rejected: {command}: {bytes(packet)!r}')
+                        return
+                gdb_command(f'Z0,{int(breakpoint_address, 0):x},2')
             qmp("cont")
             started = time.monotonic()
             for sample in range(max(1, int(seconds / 2))):
@@ -94,6 +115,25 @@ def probe(binary, bundle, output, seconds):
                     (output / 'breakpoint.json').write_text(json.dumps(
                         {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping}, indent=2))
                     breakpoint_hit = True
+                    follow = os.environ.get('N94_FOLLOW_BREAKPOINT')
+                    if follow:
+                        gdb_command(f'z0,{int(breakpoint_address, 0):x},2')
+                        gdb_command(f'Z0,{int(follow, 0):x},2')
+                        qmp('cont')
+                        follow_deadline = time.monotonic() + 30
+                        while time.monotonic() < follow_deadline:
+                            time.sleep(0.25)
+                            if qmp('query-status')['status'] == 'debug':
+                                state = qmp('human-monitor-command', {'command-line': 'info registers'})
+                                match = re.search(r'R07=([0-9a-fA-F]{8})', state)
+                                frame = qmp('human-monitor-command', {'command-line':
+                                            f'x /4wx 0x{int(match.group(1), 16):x}'}) if match else ''
+                                (output / 'follow-breakpoint.json').write_text(json.dumps(
+                                    {'registers': state, 'frame': frame}, indent=2))
+                                break
+                        else:
+                            (output / 'follow-breakpoint.txt').write_text('not reached in 30 seconds\n')
+                            qmp('stop')
                     break
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
