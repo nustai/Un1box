@@ -3,6 +3,7 @@
 import argparse
 import json
 import pathlib
+import re
 import socket
 import subprocess
 import time
@@ -61,7 +62,17 @@ def probe(binary, bundle, output, seconds):
                 time.sleep(0.25 if sample == 0 else 2)
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
-                snapshots.append({"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers})
+                snapshot = {"sample": sample, "elapsed_seconds": round(time.monotonic() - started, 3), "registers": registers}
+                if sample == 0 or sample == 3:
+                    # Stock 13G37 mach_absolute_time uses the pointer at this
+                    # global; capture the actual MMU translation, not a guess.
+                    clock = qmp("human-monitor-command", {"command-line": "x /1wx 0x803ff084"})
+                    snapshot["clock_pointer"] = clock
+                    values = re.findall(r"0x[0-9a-fA-F]+", clock)
+                    if values and int(values[-1], 16) >= 0x80000000:
+                        snapshot["clock_mapping"] = qmp("human-monitor-command", {"command-line": "gva2gpa " + values[-1]})
+                    snapshot["pmgr_counter_low"] = qmp("human-monitor-command", {"command-line": "xp /1wx 0x3f100020"})
+                snapshots.append(snapshot)
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                 if log.exists() and log.stat().st_size > 8 << 20:
                     break
