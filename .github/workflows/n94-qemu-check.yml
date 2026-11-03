@@ -59,6 +59,7 @@ jobs:
             's5l8940_sgx_control.c',
             's5l8940_dwi.c',
             's5l8940_mipi.c',
+            's5l8940_dart.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"

@@ -92,6 +92,13 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 1, 0x3f110000);
+    /* Both n94 DT DART resources; mapping behavior is not implemented. */
+    DeviceState *dart_rt = qdev_new("n94-dart-diagnostic");
+    DeviceState *dart_nrt = qdev_new("n94-dart-diagnostic");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dart_rt), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dart_rt), 0, 0x3a400000);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dart_nrt), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dart_nrt), 0, 0x38b00000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
