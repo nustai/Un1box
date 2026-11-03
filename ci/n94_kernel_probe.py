@@ -146,8 +146,16 @@ def probe(binary, bundle, output, seconds):
                                      'argument_string_bytes': string_bytes}, indent=2))
                                 break
                         else:
-                            (output / 'follow-breakpoint.txt').write_text('not reached in 30 seconds\n')
                             qmp('stop')
+                            state = qmp('human-monitor-command', {'command-line': 'info registers'})
+                            evidence = {'status': 'not reached in 30 seconds', 'registers': state}
+                            for register, label in (('R13', 'stack'), ('R07', 'frame')):
+                                match = re.search(register + r'=([0-9a-fA-F]{8})', state)
+                                if match:
+                                    address = int(match.group(1), 16)
+                                    evidence[label] = qmp('human-monitor-command', {
+                                        'command-line': f'x /32wx 0x{address:x}'})
+                            (output / 'follow-timeout.json').write_text(json.dumps(evidence, indent=2))
                     break
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
