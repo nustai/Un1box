@@ -23,6 +23,27 @@ def u32(*values):
     return struct.pack("<" + "I" * len(values), *values)
 
 
+def diagnostic_nvram():
+    """Empty, volatile proxy using XNU 3248's CHRP partition format.
+
+    The stock n94 DT has 8192 zero bytes: its zero-length first partition
+    makes initNVRAMImage at 0x80368498 repeat without advancing.
+    This is a bootloader handoff buffer, not an emulated flash controller.
+    See apple-oss-distributions/xnu xnu-3248.60.10 iokit/Kernel/IONVRAM.cpp.
+    TODO(n94): persistent NVRAM backend and real device variable provisioning.
+    """
+    result = bytearray()
+    for signature, name in ((0x70, b'common'), (0x7f, b'free')):
+        header = bytearray(struct.pack('<BBH12s', signature, 0, 4096 // 16, name))
+        checksum = 0
+        for byte in header:
+            total = checksum + byte
+            checksum = (total & 255) + (total >> 8)
+        header[1] = checksum
+        result += header + bytes(4096 - 16)
+    return bytes(result)
+
+
 def decrypt_img3(data, key, iv):
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     offset = 20
@@ -176,6 +197,10 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
     cleared_flags = dt.clear_firmware_flags()
     dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
     chosen = dt.at("chosen")
+    proxy = chosen.props.get('nvram-proxy-data', (b'', 0))[0]
+    if proxy != bytes(8192):
+        raise ValueError('expected the stock n94 empty 8192-byte NVRAM placeholder')
+    chosen.set('nvram-proxy-data', diagnostic_nvram())
     entropy = secrets.token_bytes(64) if entropy is None else entropy
     if len(entropy) != 64 or not any(entropy):
         raise ValueError("XNU requires 64 bytes of nonzero boot entropy")

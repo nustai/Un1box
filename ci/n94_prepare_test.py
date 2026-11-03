@@ -6,7 +6,7 @@ import struct
 import tempfile
 import unittest
 
-from n94_prepare_kernel import Node, prepare, u32
+from n94_prepare_kernel import Node, prepare, u32, diagnostic_nvram
 
 
 def node(name, children=(), **properties):
@@ -30,8 +30,30 @@ def kernel_walk(data, offset=0):
 
 
 class Preparation(unittest.TestCase):
+    def test_nvram_proxy_advances_through_complete_partitions(self):
+        # Reproduce the guest's length read and offset update at 0x803684d0.
+        self.assertEqual(struct.unpack_from('<H', bytes(8192), 2)[0] * 16, 0)
+        image = diagnostic_nvram()
+        offset, names = 0, []
+        while offset < len(image):
+            length = struct.unpack_from('<H', image, offset + 2)[0] * 16
+            self.assertGreaterEqual(length, 16)
+            self.assertLessEqual(offset + length, len(image))
+            header = bytearray(image[offset:offset + 16])
+            expected, header[1] = header[1], 0
+            checksum = 0
+            for byte in header:
+                total = checksum + byte
+                checksum = (total & 255) + (total >> 8)
+            self.assertEqual(expected, checksum)
+            names.append(bytes(header[4:16]).rstrip(b'\0'))
+            offset += length
+        self.assertEqual(offset, 8192)
+        self.assertEqual(names, [b'common', b'free'])
+
     def test_flagged_firmware_is_normalized_without_overlapping_boot_objects(self):
-        chosen = node("chosen", [node("memory-map", **{f"MemoryMapReserved-{i}": bytes(8) for i in range(16)})])
+        chosen = node("chosen", [node("memory-map", **{f"MemoryMapReserved-{i}": bytes(8) for i in range(16)})],
+                      **{'nvram-proxy-data': bytes(8192)})
         for name in ("marketing-hardware-behavior", "marketing-software-behavior"):
             chosen.props[name] = (b"placeholder\0", 0x80000000)
         root = node("device-tree", [node("memory", reg=bytes(8)), chosen,
