@@ -88,6 +88,10 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *dwi = qdev_new("n94-dwi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dwi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dwi), 0, 0x3f700000);
+    DeviceState *mipi = qdev_new("n94-mipi");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);
+    sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 1, 0x3f110000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");

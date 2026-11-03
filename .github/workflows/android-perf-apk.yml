@@ -690,6 +690,7 @@ jobs:
             's5l8940_i2s_switch.c',
             's5l8940_sgx_control.c',
             's5l8940_dwi.c',
+            's5l8940_mipi.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"
