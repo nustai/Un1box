@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Collect bounded traces of an actual kernel; successful collection is not an iOS boot pass."""
 import argparse
+import collections
 import json
 import os
 import pathlib
@@ -149,6 +150,22 @@ def probe(binary, bundle, output, seconds):
     # Retain a bounded head and tail, rather than upload repeated multi-GB MMIO polls.
     log_size = log.stat().st_size if log.exists() else 0
     if log.exists():
+        low_pc = collections.Counter()
+        exception_counts = collections.Counter()
+        with log.open(errors='replace') as source:
+            for line in source:
+                match = re.match(r'^0x([0-9a-fA-F]{8}):', line)
+                if match and int(match.group(1), 16) < 0x80000000:
+                    low_pc[match.group(1)] += 1
+                match = re.search(r'Taking exception \d+ \[([^]]+)\]', line)
+                if match:
+                    exception_counts[match.group(1)] += 1
+        (output / 'execution-evidence.json').write_text(json.dumps({
+            'note': 'Low addresses are observed translation blocks, not proof of a user process; QEMU in_asm logs translation, not every execution.',
+            'low_address_translation_blocks': sum(low_pc.values()),
+            'low_address_examples': low_pc.most_common(32),
+            'logged_exceptions': dict(exception_counts),
+        }, indent=2))
         # Preserve actual 13G37 driver instructions before truncating repeated
         # exception output; otherwise the interesting initialization is lost.
         ranges = ((0x80d97200, 0x80d97b00), (0x80c8e000, 0x80c92000),
