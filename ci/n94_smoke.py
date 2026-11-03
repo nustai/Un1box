@@ -15,7 +15,13 @@ def bundle():
     # Refuse to report a working CPU boot if the real early-XNU clock is frozen.
     # Each entry must see reset GPIO=0, then preserve a port write. On the
     # second entry this proves reset cleared the previous value, not just RAM.
-    words = [0, 0, 0, 0, 0xE3A04003, 0xE5884000, 0xE5986000,
+    words = [0, 0, 0, 0, 0, 0,
+             0xE5994100, 0xE3540000, 0x1AFFFFFE,
+             0xE3A04001, 0xE5894100, 0xE5996100, 0xE3560001, 0x1AFFFFFE,
+             0xE3A040FF, 0xE589477C, 0xE599677C, 0xE3560000, 0x1AFFFFFE,
+             0xE59A4000, 0xE3540000, 0x1AFFFFFE,
+             0xE3A0405A, 0xE58A4000, 0xE59A6000, 0xE356005A, 0x1AFFFFFE,
+             0xE3A04003, 0xE5884000, 0xE5986000,
              0xE20660FF, 0xE3560033, 0x1AFFFFFE,
              0xE3A04000, 0xE5884000, 0xE5986000, 0xE3560000, 0x1AFFFFFE,
              0xE2888054, 0xE3A04003, 0xE5884000, 0xE5986000,
@@ -32,7 +38,9 @@ def bundle():
     words[1] = 0xE59F3000 | (len(words) * 4 - 8)
     words[2] = 0xE59F7000 | (len(words) * 4 - 8)
     words[3] = 0xE59F8000 | (len(words) * 4 - 8)
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<IIII", 0x32500020, 0x3f200020, 0x3fa00000, 0x3f1010dc)
+    words[4] = 0xE59F9000 | (len(words) * 4 - 8)
+    words[5] = 0xE59FA000 | (len(words) * 4 - 8)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<6I", 0x32500020, 0x3f200020, 0x3fa00000, 0x3f1010dc, 0x3e000000, 0x3fd00000)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 
@@ -98,7 +106,7 @@ def execute(binary, directory, machine):
             if process.returncode != 0:
                 errors.seek(0)
                 raise AssertionError(f"QEMU exit {process.returncode}: {errors.read()}")
-            print(f"PASS {machine}: CPUs, AIC INFO/counter, PMGR target/current including OFF=0, GPIO reset, UART", flush=True)
+            print(f"PASS {machine}: CPUs, AIC, PMGR, GPIO, PL310 control/invalidate/reset, CIF backing/reset, UART", flush=True)
         finally:
             if process.poll() is None:
                 process.kill()
