@@ -18,7 +18,12 @@
 #define TYPE_S5L8940_AIC "s5l8940-aic"
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940AICState, S5L8940_AIC)
 
-#define S5L8940_AIC_NUM_IRQS 128
+/* n94 ipid-mask is six words. The stock driver requires exactly
+ * ceil(INFO.num_irqs / 32) words (13G37 0x80f09736..0x80f09754).
+ * TODO(n94): establish exact implemented IRQ count within this 192-bit capacity.
+ */
+#define S5L8940_AIC_NUM_IRQS 192
+#define S5L8940_AIC_BANKS (S5L8940_AIC_NUM_IRQS / 32)
 #define S5L8940_AIC_REG_WORDS (0x10000 / 4)
 
 struct S5L8940AICState {
@@ -32,10 +37,10 @@ struct S5L8940AICState {
     qemu_irq irq_out[2];
     qemu_irq fiq_out[2];
 
-    uint32_t enabled[4];
-    uint32_t pending[4];
-    uint32_t type[4];     /* 0 = IRQ, 1 = FIQ */
-    uint32_t target[4];   /* Target CPU bitmask for 4 banks of 32 IRQs */
+    uint32_t enabled[S5L8940_AIC_BANKS];
+    uint32_t pending[S5L8940_AIC_BANKS];
+    uint32_t type[S5L8940_AIC_BANKS]; /* TODO(n94): verify IRQ/FIQ routing ABI. */
+    uint32_t target[S5L8940_AIC_BANKS];
     uint32_t target_destinations[4]; /* DeviceTree: [0x87, 0x01, 0x8b, 0x02] */
     uint32_t priority[S5L8940_AIC_NUM_IRQS];
 
@@ -50,7 +55,7 @@ static void s5l8940_aic_update(S5L8940AICState *s)
         bool has_fiq = false;
         uint32_t cpu_mask = (1U << cpu);
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < S5L8940_AIC_BANKS; i++) {
             uint32_t active = s->pending[i] & s->enabled[i];
             uint32_t cpu_active = 0;
 
@@ -125,7 +130,14 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
     case 0x00: /* CPU WhoAmI (returns 0 for primary core) */
         val = 0;
         break;
-    case 0x04 ... 0x10: /* AIC_INT_TYPE[0..3] */
+    case 0x04:
+        /* Stock AppleInterruptController::start reads INFO at +4 twice:
+         * bits 16..20 = CPUs minus one; bits 0..9 = IRQ capacity.
+         * Returning zero caused the observed ipid-mask length 24 != 0 panic.
+         */
+        val = (1U << 16) | S5L8940_AIC_NUM_IRQS;
+        break;
+    case 0x08 ... 0x10: /* TODO(n94): remaining legacy register interpretations */
         val = s->type[(offset - 0x04) / 4];
         break;
     case 0x80: /* Target / affinity register 0 (DeviceTree target-destinations: 0x87 -> CPU0) */
@@ -161,7 +173,9 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
     s->storage[word_idx] = (uint32_t)value;
 
     switch (offset) {
-    case 0x04 ... 0x10: /* AIC_INT_TYPE */
+    case 0x04:
+        return; /* read-only INFO */
+    case 0x08 ... 0x10: /* TODO(n94): remaining legacy register interpretations */
         s->type[(offset - 0x04) / 4] = (uint32_t)value;
         break;
     case 0x80:

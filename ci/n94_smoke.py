@@ -53,8 +53,11 @@ def execute(binary, directory, machine):
                 stream = connection.makefile("rwb", buffering=0)
                 assert "QMP" in json.loads(stream.readline())
 
-                def qmp(name):
-                    stream.write((json.dumps({"execute": name}) + "\n").encode())
+                def qmp(name, arguments=None):
+                    request = {"execute": name}
+                    if arguments is not None:
+                        request["arguments"] = arguments
+                    stream.write((json.dumps(request) + "\n").encode())
                     while True:
                         response = json.loads(stream.readline())
                         if "error" in response:
@@ -64,6 +67,8 @@ def execute(binary, directory, machine):
 
                 qmp("qmp_capabilities")
                 assert len(qmp("query-cpus-fast")) == 2
+                info = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3f200004'})
+                assert '0x000100c0' in info, info
                 qmp("cont")
                 for attempt in range(2):
                     deadline = time.monotonic() + 10
