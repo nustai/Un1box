@@ -134,6 +134,12 @@ def probe(binary, bundle, output, seconds):
                 qmp("cont")
             qmp("stop")
             (output / "cpus.json").write_text(json.dumps(qmp("query-cpus-fast"), indent=2))
+            try:
+                # This captures the actual QEMU console, which may be blank
+                # until a guest display driver is implemented and initialized.
+                qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
+            except RuntimeError as error:
+                (output / 'screen-error.txt').write_text(str(error) + '\n')
             stream.write(b'{"execute":"quit"}\n')
             process.wait(timeout=10)
         except Exception as error:
