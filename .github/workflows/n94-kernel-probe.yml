@@ -14,6 +14,10 @@ on:
         description: Optional guest instruction address for MMU translation capture
         required: false
         type: string
+      diagnostic_no_secure_root:
+        description: Diagnostic only - remove stock md secure-root policy (insecure)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,15 +50,15 @@ jobs:
       - name: Prepare actual stock kernel inputs
         env:
           RESTORE_RAMDISK: ${{ inputs.restore_ramdisk }}
+          DIAGNOSTIC_NO_SECURE_ROOT: ${{ inputs.diagnostic_no_secure_root }}
         run: |
           curl --fail --location --retry 3 --max-time 600 \
             'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
           python3 ci/n94_prepare_test.py
-          if [ "$RESTORE_RAMDISK" = true ]; then
-            python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --restore-ramdisk --output n94-images
-          else
-            python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
-          fi
+          flags=()
+          if [ "$RESTORE_RAMDISK" = true ]; then flags+=(--restore-ramdisk); fi
+          if [ "$DIAGNOSTIC_NO_SECURE_ROOT" = true ]; then flags+=(--diagnostic-no-secure-root); fi
+          python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw "${flags[@]}" --output n94-images
       - name: Capture actual guest execution
         timeout-minutes: 6
         env:

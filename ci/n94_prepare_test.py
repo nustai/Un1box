@@ -6,7 +6,7 @@ import struct
 import tempfile
 import unittest
 
-from n94_prepare_kernel import Node, prepare, u32, diagnostic_nvram, diagnostic_performance
+from n94_prepare_kernel import Node, prepare, u32, diagnostic_nvram, diagnostic_performance, diagnostic_secure_root
 
 
 def node(name, children=(), **properties):
@@ -30,6 +30,17 @@ def kernel_walk(data, offset=0):
 
 
 class Preparation(unittest.TestCase):
+    def test_secure_root_override_is_explicit_and_restricted(self):
+        tree = node('device-tree', **{'secure-root-prefix': b'md\0'})
+        diagnostic_secure_root(tree, None, False)
+        self.assertEqual(tree.props['secure-root-prefix'][0], b'md\0')
+        with self.assertRaisesRegex(ValueError, 'requires'):
+            diagnostic_secure_root(tree, None, True)
+        diagnostic_secure_root(tree, b'ramdisk', True)
+        self.assertNotIn('secure-root-prefix', tree.props)
+        with self.assertRaisesRegex(ValueError, 'requires'):
+            diagnostic_secure_root(tree, b'ramdisk', True)
+
     def test_blank_performance_table_has_one_nominal_diagnostic_state(self):
         pmgr = node('pmgr', **{'voltage-states1': bytes(24), 'nominal-performance1': u32(0x14000)})
         self.assertEqual(struct.unpack_from('<I', pmgr.props['voltage-states1'][0])[0], 0)

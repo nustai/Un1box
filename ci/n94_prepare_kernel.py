@@ -211,12 +211,20 @@ def macho(data):
     return segments, entry
 
 
-def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
+def diagnostic_secure_root(dt, ramdisk, enabled):
+    if enabled:
+        if ramdisk is None or dt.props.get('secure-root-prefix', (None,))[0] != b'md\0':
+            raise ValueError('diagnostic secure-root override requires the stock md prefix and a ramdisk')
+        del dt.props['secure-root-prefix']
+
+
+def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None, diagnostic_no_secure_root=False):
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
         raise ValueError("Apple DT parser did not round-trip the input")
     cleared_flags = dt.clear_firmware_flags()
+    diagnostic_secure_root(dt, ramdisk, diagnostic_no_secure_root)
     dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
     chosen = dt.at("chosen")
     proxy = chosen.props.get('nvram-proxy-data', (b'', 0))[0]
@@ -290,6 +298,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None):
     report = {"diagnostic_only": True, "kernel_entry": hex(entry), "bootargs_version_candidate": version,
               "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
               "root_filesystem": "restore-ramdisk" if ramdisk is not None else "absent",
+              "diagnostic_secure_root_override": diagnostic_no_secure_root,
               "firmware_property_flags_cleared": cleared_flags,
               "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
               "diagnostic_nvram": {"mode": "volatile-empty-CHRP", "bytes": 8192},
@@ -309,6 +318,8 @@ def main():
     parser.add_argument("--dt", type=pathlib.Path)
     parser.add_argument("--ramdisk", type=pathlib.Path)
     parser.add_argument("--restore-ramdisk", action="store_true")
+    parser.add_argument("--diagnostic-no-secure-root", action="store_true",
+                        help="diagnostic only: remove stock md secure-root policy; never production")
     parser.add_argument("--output", required=True, type=pathlib.Path)
     options = parser.parse_args()
     ramdisk = options.ramdisk.read_bytes() if options.ramdisk else None
@@ -338,7 +349,7 @@ def main():
         parser.error("provide --ipsw or both --kernel and --dt")
     entropy = secrets.token_bytes(64)
     for version in (2, 3):
-        prepare(kernel, dt, version, options.output, ramdisk, entropy)
+        prepare(kernel, dt, version, options.output, ramdisk, entropy, options.diagnostic_no_secure_root)
 
 
 if __name__ == "__main__":
