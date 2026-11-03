@@ -65,3 +65,21 @@ at 0x80553984 as AppleARMPlatform, called from AppleS5L8940X+0x1d4c.
 This is a performance-reporting dimension, not framebuffer resolution.
 The source of the zero state count is still under investigation; do not
 substitute panel dimensions or patch out the panic based on its wording.
+
+## Performance boot data and slot control
+
+AppleARMPlatform 0x805536f2..0x80553730 reads eight-byte voltage-states
+records and terminates on the first zero performance. Stock voltage-states1
+is 24 zero bytes. The diagnostic image now supplies one state using the
+existing n94 nominal-performance1 value (81920 in DT units). Voltage remains
+unknown/zero; actual calibrated DVFS is not implemented.
+Run [41605346742](https://github.com/nustai/un1box-n94/actions/runs/41605346742)
+passes IOReporter setup and prints domain 1 voltage/performance state counts
+of one, then panics with `out of PERF_STATE registers`.
+At 0x80d96230..0x80d9628a the n94 driver reads PMGR offset 0x300 and retains
+its low nibble. The allocation loop starts with 16 and decrements until that
+lower bound, panicking at 0x80d9644e when reached. The old generic PMGR 0xf
+default thus leaves one slot. A separate +0x300 backing register now resets
+to diagnostic zero (no bootloader-reserved slots), preserving zero writes.
+Full register fields and the physical hardware/bootloader reset snapshot
+remain unknown; zero is an explicit virtual boot ownership choice.
