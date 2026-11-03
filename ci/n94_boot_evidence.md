@@ -172,3 +172,20 @@ Build 41620406791 compiled and linked the new model and passed ARM smoke,
 but QTest stopped before any DMA assertion: irq_intercept_out needs the
 named sysbus-irq GPIO group. Test corrected in 5e625a37; repeat run
 41623585014 must pass before claiming transaction verification.
+
+Run 41623585014 now passed all seven CDMA QTest result groups: exact
+device-to-RAM bytes/bounds/counters and W1C IRQ; exact RAM-to-UART
+scatter/gather with masked/pending IRQ; four malformed descriptor/command
+cases; crypto rejection and complete reset. This verifies real model
+transactions and output pins, not physical hardware equivalence or AIC
+delivery to the CPU.
+
+Kernel probe 41624639266 with both boot_args candidates passes the old
+CDMA access (executed 0x80c8e87c and continuation 0x80c8e886 retained in
+driver-init.log), prints starts for i2c0/i2c1/i2c2 and then panics at
+0x80d2747a, VA 0xcfc2d000. That PC is AppleS5L8930XUSB+0x247a in the stock
+n94 kernelcache: ldr r1,[r0], followed by clearing bit 0x40 and writing
+back. This is Apple's bundled driver name, not a board model imported
+into this implementation. The physical mapping is not yet established:
+post-panic gva2gpa returns Unmapped. USB is the next observed blocker;
+ios_boot_confirmed remains false for both candidates.
