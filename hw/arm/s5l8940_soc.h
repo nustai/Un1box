@@ -109,4 +109,7 @@ struct S5L8940State {
     size_t devicetree_size;
 };
 
+/* Display the validated bootloader-provided framebuffer until guest takeover. */
+void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address);
+
 #endif /* HW_ARM_S5L8940_SOC_H */

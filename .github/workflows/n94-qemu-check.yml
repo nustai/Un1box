@@ -3,10 +3,10 @@ name: N94 iPhone 4S QEMU Syntax & Object Verification
 on:
   push:
     branches: [ main ]
-    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', '.github/workflows/n94-qemu-check.yml' ]
+    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', 'ci/n94_display_test.py', '.github/workflows/n94-qemu-check.yml' ]
   pull_request:
     branches: [ main ]
-    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', '.github/workflows/n94-qemu-check.yml' ]
+    paths: [ 'hw/arm/**', 'ci/n94_smoke.py', 'ci/n94_cdma_test.py', 'ci/n94_display_test.py', '.github/workflows/n94-qemu-check.yml' ]
   workflow_dispatch:
     inputs:
       kernel_probe:
@@ -92,6 +92,9 @@ jobs:
 
       - name: Verify CDMA scatter-gather data and IRQ signals against real devices
         run: python3 ci/n94_cdma_test.py qemu_src/build/qemu-system-arm
+
+      - name: Verify guest framebuffer is visible in QEMU console
+        run: python3 ci/n94_display_test.py qemu_src/build/qemu-system-arm
 
       - name: Package verified host emulator for repeatable kernel probes
         run: |

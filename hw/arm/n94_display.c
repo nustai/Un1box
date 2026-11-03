@@ -14,6 +14,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
+#include "hw/arm/s5l8940_soc.h"
 #include "ui/console.h"
 #include "ui/surface.h"
 #include "qemu/timer.h"
@@ -45,9 +46,11 @@ struct N94DisplayState {
     QEMUTimer *vblank_timer;
 
     uint32_t fb_base;
+    uint32_t boot_fb_base;
     uint32_t ctrl;
     uint32_t status;
     bool enabled;
+    bool guest_configured;
 
     uint32_t storage[N94_CLCD_WORDS];
     uint32_t storage_sub1[N94_CLCD_SUB1_WORDS];
@@ -59,14 +62,18 @@ static void n94_display_update(void *opaque)
     N94DisplayState *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
 
-    if (!s->enabled || !s->fb_base) {
+    uint32_t fb = s->guest_configured ? (s->enabled ? s->fb_base : 0) : s->boot_fb_base;
+    if (!fb) {
         return;
     }
 
     uint8_t *dest = surface_data(surface);
     if (dest) {
         /* Read directly from guest physical memory into console surface buffer */
-        cpu_physical_memory_read(s->fb_base, dest, N94_DISPLAY_FB_SIZE);
+        for (unsigned y = 0; y < N94_DISPLAY_HEIGHT; y++) {
+            cpu_physical_memory_read(fb + y * N94_DISPLAY_STRIDE,
+                                     dest + y * surface_stride(surface), N94_DISPLAY_STRIDE);
+        }
         dpy_gfx_update_full(s->con);
     }
 }
@@ -128,6 +135,7 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
 
     switch (offset) {
     case 0x00:
+        s->guest_configured = true;
         s->ctrl = (uint32_t)value;
         s->enabled = (s->ctrl & 0x01) != 0;
         break;
@@ -137,6 +145,13 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     default:
         break;
     }
+}
+
+void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
+{
+    N94DisplayState *s = N94_DISPLAY(dev);
+    s->boot_fb_base = address;
+    s->guest_configured = false;
 }
 
 /* MMIO Region 1: 0x09200000:0x2000 (Overlay 0 / Subregion 1) */

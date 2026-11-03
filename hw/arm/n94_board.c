@@ -241,6 +241,23 @@ static void n94_reset(void *opaque)
     N94MachineState *s = opaque;
     ARMCPU *cpu0 = &s->soc.cpu[0];
     CPUARMState *env = &cpu0->env;
+    uint8_t video[24];
+    uint32_t fb = 0;
+
+    /* Boot video is a view of guest RAM, not an emulated GPU. Accept only
+     * the geometry we can render and an entirely contained RAM range. */
+    if (s->bootargs_pa >= S5L8940_RAM_BASE &&
+        (uint64_t)s->bootargs_pa + 44 <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
+        cpu_physical_memory_read(s->bootargs_pa + 20, video, sizeof(video));
+        uint32_t candidate = ldl_le_p(video);
+        if (ldl_le_p(video + 8) == 640 * 4 && ldl_le_p(video + 12) == 640 &&
+            ldl_le_p(video + 16) == 960 && ldl_le_p(video + 20) == 32 &&
+            candidate >= S5L8940_RAM_BASE &&
+            (uint64_t)candidate + 640 * 960 * 4 <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
+            fb = candidate;
+        }
+    }
+    n94_display_set_boot_framebuffer(s->soc.clcd, fb);
 
     /* 1. Reset PC to entry point */
     if (s->kernel_entry) {
