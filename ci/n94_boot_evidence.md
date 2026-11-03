@@ -41,3 +41,16 @@ The model now advertises two CPUs and a capacity of 192 IRQs. This matches
 the six-word mask; the precise physical count within 161..192 is still unknown.
 INFO correction does not validate the remaining legacy AIC register model,
 timer compares, interrupt acknowledgement, or secondary-core release.
+
+Run [41602251048](https://github.com/nustai/un1box-n94/actions/runs/41602251048)
+passes that former panic and prints AIC external capacity 0xc0, four IPIs.
+The following panic is a data abort at PC 0x8109f666, a direct GPIO register
+load. Its caller 0x8109efdc loops over the port count with a four-byte stride.
+Stock n94 DT /arm-io/gpio gives reg=(0x0fa00000,0x1000), #gpio-ports=28,
+#interrupt-groups=8, parent interrupt=0x77; arm-io translation adds 0x30000000.
+The driver class name printed by Apple's own n94 kernel includes S5L8930;
+our model uses only this n94 DT and these n94 kernel instructions.
+Post-panic QMP gva2gpa returned Unmapped, so physical GPIO identification
+comes from the DT mapping path, not a successful post-panic MMU query.
+The added diagnostic port bank deliberately leaves input and IRQ semantics
+unimplemented and logs accesses outside the observed port word range.
