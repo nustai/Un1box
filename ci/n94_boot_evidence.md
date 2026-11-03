@@ -132,3 +132,18 @@ The second CIF range has only explicitly diagnostic backing and LOG_UNIMP
 on every access; its command/status semantics remain unimplemented.
 ARM smoke checks control write/read/reset, invalidate completion and CIF
 backing/reset before it emits its UART marker on both machine aliases.
+
+Host build [41614884721](https://github.com/nustai/un1box-n94/actions/runs/41614884721)
+passes those ARM tests. Kernel runs 41615947906 and
+[41616848328](https://github.com/nustai/un1box-n94/actions/runs/41616848328)
+pass the old PL310 load and reach AppleCDMA. The latter's driver-init.log
+retains executed blocks 0x80d97498, 0x80d975e0, 0x80d975f8, 0x80d97606 and
+0x80d9760a: feature setup, invalidate request, poll and successful return.
+No CIF access is recorded before this panic; its behavior remains untested.
+
+The next fault is a store at 0x80c8e87c (AppleCDMA+0x87c), MMIO +8.
+Stock n94 /arm-io/cdma reg=(0x07000000,0x2d000),(0x07800000,0x9000),
+thus root bases 0x37000000/0x37800000. DT cdma-version=3, max-channel=44,
+interrupt list has 44 entries 0x33..0x5e. Driver 0x80c8e790 maps region 0
+into the pointer later used by that store. A real DMA/channel/IRQ model is
+not yet present; register backing alone would not establish working DMA.
