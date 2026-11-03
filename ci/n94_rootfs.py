@@ -251,6 +251,7 @@ def main():
     disk = UDIF(crypto)
     volume = HFS(disk)
     files = volume.lookup(["/sbin/launchd", "/usr/lib/dyld", "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
+                           "/Applications/Preferences.app/Preferences",
                            "/System/Library/CoreServices/SystemVersion.plist"])
     report = {"ipsw_os_member": name, "encrypted_bytes": encrypted.stat().st_size,
               "logical_disk_bytes": disk.size, "hfs_volume_bytes": volume.size,
