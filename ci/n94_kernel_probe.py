@@ -27,6 +27,7 @@ def probe(binary, bundle, output, seconds):
         command += ['-gdb', f'tcp:127.0.0.1:{gdb_port}']
     snapshots = []
     failure = None
+    breakpoint_hit = False
     with (output / "stderr.log").open("w+") as errors:
         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
         connection = None
@@ -91,6 +92,7 @@ def probe(binary, bundle, output, seconds):
                     mapping = qmp('human-monitor-command', {'command-line': f'gva2gpa 0x{address:x}'})
                     (output / 'breakpoint.json').write_text(json.dumps(
                         {'registers': registers, 'virtual_address': hex(address), 'mapping': mapping}, indent=2))
+                    breakpoint_hit = True
                     break
                 qmp("stop")
                 registers = qmp("human-monitor-command", {"command-line": "info registers"})
@@ -177,6 +179,10 @@ def probe(binary, bundle, output, seconds):
     print(json.dumps(summary), flush=True)
     if snapshots:
         print(snapshots[-1]["registers"], flush=True)
+    if failure:
+        raise RuntimeError(failure)
+    if breakpoint_address and not breakpoint_hit:
+        raise RuntimeError(f'Breakpoint {breakpoint_address} was not reached')
 
 
 def main():
