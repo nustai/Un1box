@@ -218,7 +218,8 @@ def diagnostic_secure_root(dt, ramdisk, enabled):
         del dt.props['secure-root-prefix']
 
 
-def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None, diagnostic_no_secure_root=False):
+def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
+            diagnostic_no_secure_root=False, diagnostic_single_cpu=False):
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -276,6 +277,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None, diagnos
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
     command = b"-v serial=3 debug=0x14e keepsyms=1"
+    if diagnostic_single_cpu:
+        command += b" cpus=1"
     if ramdisk is not None:
         command += b" rd=md0"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
@@ -299,6 +302,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None, diagnos
               "device_tree_pa": hex(dt_pa), "boot_args_pa": hex(args_pa), "top_of_kernel_data": hex(top),
               "root_filesystem": "restore-ramdisk" if ramdisk is not None else "absent",
               "diagnostic_secure_root_override": diagnostic_no_secure_root,
+              "diagnostic_single_cpu": diagnostic_single_cpu,
               "firmware_property_flags_cleared": cleared_flags,
               "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
               "diagnostic_nvram": {"mode": "volatile-empty-CHRP", "bytes": 8192},
@@ -320,6 +324,8 @@ def main():
     parser.add_argument("--restore-ramdisk", action="store_true")
     parser.add_argument("--diagnostic-no-secure-root", action="store_true",
                         help="diagnostic only: remove stock md secure-root policy; never production")
+    parser.add_argument("--diagnostic-single-cpu", action="store_true",
+                        help="diagnostic only: request one CPU from XNU via cpus=1")
     parser.add_argument("--output", required=True, type=pathlib.Path)
     options = parser.parse_args()
     ramdisk = options.ramdisk.read_bytes() if options.ramdisk else None
@@ -349,7 +355,8 @@ def main():
         parser.error("provide --ipsw or both --kernel and --dt")
     entropy = secrets.token_bytes(64)
     for version in (2, 3):
-        prepare(kernel, dt, version, options.output, ramdisk, entropy, options.diagnostic_no_secure_root)
+        prepare(kernel, dt, version, options.output, ramdisk, entropy,
+                options.diagnostic_no_secure_root, options.diagnostic_single_cpu)
 
 
 if __name__ == "__main__":
