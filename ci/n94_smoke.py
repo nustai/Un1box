@@ -18,6 +18,9 @@ def bundle():
     words = [0, 0, 0, 0, 0xE3A04003, 0xE5884000, 0xE5986000,
              0xE20660FF, 0xE3560033, 0x1AFFFFFE,
              0xE3A04000, 0xE5884000, 0xE5986000, 0xE3560000, 0x1AFFFFFE,
+             0xE2888054, 0xE3A04003, 0xE5884000, 0xE5986000,
+             0xE20660FF, 0xE3560033, 0x1AFFFFFE,
+             0xE3A04000, 0xE5884000, 0xE5986000, 0xE3560000, 0x1AFFFFFE,
              0xE5974000, 0xE3540000, 0x1AFFFFFE,
              0xE3A0405A, 0xE5874000, 0xE5976000, 0xE1540006, 0x1AFFFFFE,
              0xE5934000, 0xE3A050FF, 0xE2555001, 0x1AFFFFFD,
@@ -29,7 +32,7 @@ def bundle():
     words[1] = 0xE59F3000 | (len(words) * 4 - 8)
     words[2] = 0xE59F7000 | (len(words) * 4 - 8)
     words[3] = 0xE59F8000 | (len(words) * 4 - 8)
-    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<IIII", 0x32500020, 0x3f200020, 0x3fa00000, 0x3f101130)
+    image = struct.pack("<" + "I" * len(words), *words) + struct.pack("<IIII", 0x32500020, 0x3f200020, 0x3fa00000, 0x3f1010dc)
     image = image.ljust(4096, b"\0")
     return image + struct.pack("<8s4I", b"N94KBOOT", 0x80001000, 0x80001000, 0x80001800, len(image))
 

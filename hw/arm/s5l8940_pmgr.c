@@ -17,8 +17,11 @@
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940PMGRState, S5L8940_PMGR)
 
 #define S5L8940_PMGR_WORDS (0x7000 / 4)
-/* n94 device-clocks-min/max are 56/128; driver register = 0x1000 + id*4. */
-#define N94_DEVICE_CLOCK_FIRST (0x1000 + 56 * 4)
+/* n94 driver register = 0x1000 + id*4. Its 0x80d96678 cleanup explicitly
+ * visits IDs 9..87: DT device-clocks-min=56 is NOT a lower register bound.
+ * Model 128 clock words (DT device-clocks-max); TODO(n94): exact min/max ABI.
+ */
+#define N94_DEVICE_CLOCK_FIRST 0x1000
 #define N94_DEVICE_CLOCK_END   (0x1000 + 128 * 4)
 
 struct S5L8940PMGRState {
