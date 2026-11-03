@@ -88,6 +88,11 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *dwi = qdev_new("n94-dwi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dwi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dwi), 0, 0x3f700000);
+
+    /* Diagnostic only: n94 scaler0 registers, without image processing. */
+    DeviceState *scaler = qdev_new("n94-scaler");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(scaler), 0, 0x38300000);
     DeviceState *mipi = qdev_new("n94-mipi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);

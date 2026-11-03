@@ -255,3 +255,9 @@ display-pipe initialization at 0x80631d1e, VA 0xeecea260; the v2 candidate
 did not reach restore userspace within the sampled period. The v3 screen still
 contains only the black background and 8-by-16 white rectangle. Physical
 translation of the new fault is being checked, not inferred from its name.
+
+Run 41694103733 translated the faulting R1 base to physical 0x38300000
+in both candidates, matching the n94 scaler0 DT node. Diagnostic register
+storage for its 0x1000-byte region is present for the next probe; it does
+not perform pixel scaling, DMA, or generate the scaler interrupt. It must
+not be interpreted as a functional graphics pipeline.

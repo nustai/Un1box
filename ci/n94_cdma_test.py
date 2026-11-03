@@ -164,6 +164,8 @@ def execute(binary, directory):
                 writel(0x38b00010, 0x55)
                 assert readl(0x3a400010) == 0x3f
                 assert readl(0x38b00010) == 0x55
+                writel(0x38300260, 0x12345678)
+                assert readl(0x38300260) == 0x12345678
                 qmp('system_reset')
                 assert readl(CHANNEL) == 0x20000
                 assert readl(CHANNEL + 0xc) == 0
@@ -175,6 +177,7 @@ def execute(binary, directory):
                 assert readl(0x3f110000) == 0
                 assert readl(0x3a400010) == 0
                 assert readl(0x38b00010) == 0
+                assert readl(0x38300260) == 0
                 assert not levels.get(0)
                 print('PASS CDMA unsupported crypto rejected and reset clears channel/masks/IRQ/crypto', flush=True)
                 monitor_stream.write(b'{"execute":"quit"}\n')
