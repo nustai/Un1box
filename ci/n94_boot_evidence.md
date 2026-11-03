@@ -261,3 +261,18 @@ in both candidates, matching the n94 scaler0 DT node. Diagnostic register
 storage for its 0x1000-byte region is present for the next probe; it does
 not perform pixel scaling, DMA, or generate the scaler interrupt. It must
 not be interpreted as a functional graphics pipeline.
+
+Host run 41694763679 passed all model and framebuffer checks. Kernel run
+41696153125 passed the previous scaler fault and then both candidates
+faulted in AppleVXE380 at 0x81100e8e, reading offset 0x3d0; its physical
+address needs a separate breakpoint. Breakpoint run 41696158473 showed that
+the CLCD startup check reads the second CLCD region at 0x39200000. Its sampled
+registers through +0x5c were zero in both candidates. The driver's code
+checks bit 0 at +0x50 and nonzero fields under masks 0x7ff and 0x7ff0000 at
++0x60. These observations do not establish their full hardware semantics.
+
+Breakpoint run 41696912535 captured the VXE fault for v2 and translated its
+R1 base to 0x38000000, matching the n94 vxe node. The v3 breakpoint was not
+reached during the sampling window, so that run failed and does not confirm
+the v3 address. The opt-in no-vxe diagnostic omits hardware video encoding;
+it is disabled by default and does not emulate video encoding.

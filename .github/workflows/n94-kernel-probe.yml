@@ -30,6 +30,10 @@ on:
         description: Diagnostic only - omit external TV-out from the device tree
         type: boolean
         default: false
+      diagnostic_no_vxe:
+        description: Diagnostic only - omit the hardware video encoder
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -65,6 +69,7 @@ jobs:
           DIAGNOSTIC_NO_SECURE_ROOT: ${{ inputs.diagnostic_no_secure_root }}
           DIAGNOSTIC_SINGLE_CPU: ${{ inputs.diagnostic_single_cpu }}
           DIAGNOSTIC_NO_TV_OUT: ${{ inputs.diagnostic_no_tv_out }}
+          DIAGNOSTIC_NO_VXE: ${{ inputs.diagnostic_no_vxe }}
         run: |
           curl --fail --location --retry 3 --max-time 600 \
             'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
@@ -74,6 +79,7 @@ jobs:
           if [ "$DIAGNOSTIC_NO_SECURE_ROOT" = true ]; then flags+=(--diagnostic-no-secure-root); fi
           if [ "$DIAGNOSTIC_SINGLE_CPU" = true ]; then flags+=(--diagnostic-single-cpu); fi
           if [ "$DIAGNOSTIC_NO_TV_OUT" = true ]; then flags+=(--diagnostic-no-tv-out); fi
+          if [ "$DIAGNOSTIC_NO_VXE" = true ]; then flags+=(--diagnostic-no-vxe); fi
           python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw "${flags[@]}" --output n94-images
       - name: Capture actual guest execution
         timeout-minutes: 6
