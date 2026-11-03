@@ -46,6 +46,7 @@ struct S5L8940AICState {
 
     /* Full register backing store to handle all vendor control and status registers */
     uint32_t storage[S5L8940_AIC_REG_WORDS];
+    unsigned diagnostic_accesses;
 };
 
 static void s5l8940_aic_update(S5L8940AICState *s)
@@ -115,6 +116,9 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
     S5L8940AICState *s = opaque;
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % S5L8940_AIC_REG_WORDS;
+    if (offset != 0x20 && offset != 0x28 && s->diagnostic_accesses++ < 2048) {
+        qemu_log_mask(LOG_UNIMP, "n94 AIC read +0x%" HWADDR_PRIx "\n", offset);
+    }
 
     /* Stock 13G37 mach_absolute_time reads HI/LO/HI at +0x28/+0x20/+0x28.
      * QMP gva2gpa of its global clock pointer confirms physical 0x3f200000.
@@ -166,6 +170,9 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
 static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     S5L8940AICState *s = opaque;
+    if (offset != 0x20 && offset != 0x28 && s->diagnostic_accesses++ < 2048) {
+        qemu_log_mask(LOG_UNIMP, "n94 AIC write +0x%" HWADDR_PRIx " = 0x%08x\n", offset, (uint32_t)value);
+    }
     if (offset == 0x20 || offset == 0x28) {
         return; /* free-running counter */
     }
