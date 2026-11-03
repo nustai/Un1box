@@ -54,3 +54,14 @@ Post-panic QMP gva2gpa returned Unmapped, so physical GPIO identification
 comes from the DT mapping path, not a successful post-panic MMU query.
 The added diagnostic port bank deliberately leaves input and IRQ semantics
 unimplemented and logs accesses outside the observed port word range.
+
+GPIO host build [41602972643](https://github.com/nustai/un1box-n94/actions/runs/41602972643)
+passes CPU-executed port read/write and reset checks on both machine names.
+Kernel run [41603982852](https://github.com/nustai/un1box-n94/actions/runs/41603982852)
+passes the earlier GPIO load and reaches AppleS5L8940XPerformanceController.
+Both boot_args versions then panic in IOReporter::handleSwapCleanup with
+one channel and dimension zero. Symbol lookup identifies the reporting path
+at 0x80553984 as AppleARMPlatform, called from AppleS5L8940X+0x1d4c.
+This is a performance-reporting dimension, not framebuffer resolution.
+The source of the zero state count is still under investigation; do not
+substitute panel dimensions or patch out the panic based on its wording.

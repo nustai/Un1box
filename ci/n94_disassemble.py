@@ -3,6 +3,7 @@
 import argparse
 import pathlib
 import struct
+import xml.etree.ElementTree as ET
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_ARM, CS_MODE_THUMB
 from n94_prepare_kernel import macho
 
@@ -27,13 +28,38 @@ for _ in range(struct.unpack_from('<I', data, 16)[0]):
                 symbols.append((value & ~1, strings[name:].split(b'\0', 1)[0].decode(errors='replace')))
     offset += size
 symbols.sort()
+kexts = []
+for name, base, memory, offset, length in segments:
+    if name == '__PRELINK_INFO':
+        tree = ET.fromstring(data[offset:offset + length].rstrip(b'\0'))
+        identifiers = {element.attrib['ID']: element for element in tree.iter() if 'ID' in element.attrib}
+        def value_text(element):
+            for _ in range(32):
+                reference = element.attrib.get('IDREF')
+                if reference is None:
+                    return element.text
+                element = identifiers[reference]
+            raise ValueError('cyclic prelink XML IDREF')
+        for dictionary in tree.iter('dict'):
+            children = list(dictionary)
+            values = {value_text(children[i]): value_text(children[i + 1]) for i in range(len(children) - 1)
+                      if children[i].tag == 'key'}
+            try:
+                start = int(values['_PrelinkExecutableLoadAddr'], 0)
+                size = int(values['_PrelinkExecutableSize'], 0)
+                kexts.append((start, size, values.get('CFBundleIdentifier', '?')))
+            except (KeyError, TypeError, ValueError):
+                pass
 decoder = Cs(CS_ARCH_ARM, CS_MODE_ARM if args.arm else CS_MODE_THUMB)
 for address in args.addresses:
     for name, base, _, offset, length in segments:
         if base <= address < base + length:
             start = offset + address - base
             print(f'\n{address:#010x} ({name})')
-            previous = [entry for entry in symbols if entry[0] <= address]
+            for kext_base, size, bundle in kexts:
+                if kext_base <= address < kext_base + size:
+                    print(f'{bundle}+{address - kext_base:#x}')
+            previous = [entry for entry in symbols if entry[0] <= address] if name != '__PRELINK_TEXT' else []
             if previous:
                 base_symbol, symbol = previous[-1]
                 print(f'{symbol}+{address - base_symbol:#x}')
