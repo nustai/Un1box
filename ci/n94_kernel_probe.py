@@ -156,6 +156,9 @@ def probe(binary, bundle, output, seconds):
                             if first_frame:
                                 evidence['initial_thread_frame_after_wait'] = qmp('human-monitor-command', {
                                     'command-line': f'x /64wx 0x{first_frame:x}'})
+                                if first_frame >= 512:
+                                    evidence['initial_thread_stack_below_frame'] = qmp('human-monitor-command', {
+                                        'command-line': f'x /128wx 0x{first_frame - 512:x}'})
                             for register, label in (('R13', 'stack'), ('R07', 'frame')):
                                 match = re.search(register + r'=([0-9a-fA-F]{8})', state)
                                 if match:
