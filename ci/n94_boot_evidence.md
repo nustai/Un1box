@@ -211,3 +211,38 @@ breakpoints for AIC publication and IOP completion were not reached within
 instruction after AIC's parent registerInterrupt (41685310428). These are
 time-bounded debugger observations, not proof of the cause or of a permanent
 deadlock. Trace artifacts are saved under n94_diagnostic_traces/.
+
+## Diagnostic single-CPU progress (revision 26)
+
+The saved AIC thread stack reaches IOCPUInterruptController::registerInterrupt.
+At the comparison in run 41687362317, both boot-argument candidates had
+enabledCPUs=0 and numCPUs=2. The matching XNU source waits until those counts
+match. CPU1 remains powered off in this model; the zero enabled count also
+shows that the observed state cannot be explained solely by counting CPU1.
+
+The opt-in cpus=1 diagnostic, with secure-root policy separately disabled,
+passed that wait in run 41687437846. AppleIOPFMI started but reported no NAND
+chips. This is a restore-ramdisk experiment, not a normal system boot.
+Diagnostic DWI and MIPI register storage let subsequent runs reach their
+driver start routines; no PMIC transaction or MIPI panel protocol is modeled.
+Run 41690960816 then faulted in DART initialization. The debugger in run
+41691310494 confirmed physical address 0x3a400000, matching n94 dart-rt.
+The new DART register storage does not implement IOMMU translation or IRQs.
+NAND/IOP storage, GPU, display pipeline, touch, SMP and secure root remain
+unfinished; no SpringBoard or working settings screen has been observed.
+
+Inspection of the prepared Apple DT additionally shows that the disk node's
+`#ce`, `#page-bytes`, `#block-pages`, `ce-bitmap`, `device-readid`, and
+`dbg-chipids` properties are all zero. These are unpopulated firmware-handoff
+data, not evidence of a particular physical NAND geometry. The zero chip IDs
+in the UART output therefore do not alone establish that an IOP transaction
+was attempted. A working flash backend also needs a validated NAND geometry,
+FTL/layout, and IOP/FMI request implementation; setting arbitrary nonzero
+properties would not provide working storage.
+
+Host build 41691585518 passed compilation and all synthetic QTests. With
+both explicit diagnostic flags, run 41692423272 moved past the prior DART
+fault but panicked at PC 0x80877902 on an unmapped register at virtual offset
+0x1c in both boot-args variants. A separate breakpoint probe is required to
+identify its physical address. Its saved v3 screen contains only black and
+an 8-by-16 white rectangle, not a system or SpringBoard screenshot.
