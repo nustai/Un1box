@@ -74,6 +74,8 @@ def execute(binary, directory, machine):
                 assert len(qmp("query-cpus-fast")) == 2
                 info = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3f200004'})
                 assert '0x000100c0' in info, info
+                perf = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3f100300'})
+                assert '0x00000000' in perf, perf
                 qmp("cont")
                 for attempt in range(2):
                     deadline = time.monotonic() + 10

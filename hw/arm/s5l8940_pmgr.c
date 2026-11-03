@@ -37,6 +37,15 @@ static uint64_t s5l8940_pmgr_read(void *opaque, hwaddr offset, unsigned size)
     uint32_t word_idx = (offset / 4) % S5L8940_PMGR_WORDS;
 
     switch (offset) {
+    case 0x300:
+        /* Stock n94 _initPMGRState reads +0x300 at 0x80d96230 and uses
+         * its low nibble as the occupied PERF_STATE prefix. A blanket 0xf
+         * leaves one of 16 slots and provokes "out of PERF_STATE registers".
+         * Keep a distinct writable register, including a meaningful zero.
+         * TODO(n94): verify full PERF_STATE control bits and hardware reset.
+         */
+        val = s->storage[word_idx];
+        break;
     case 0x00 ... 0x1fc: { /* Clock Gates */
         int idx = (offset / 4) % 128;
         val = s->clock_gates[idx];
@@ -119,6 +128,8 @@ static void s5l8940_pmgr_init(Object *obj)
     for (int i = 0; i < S5L8940_PMGR_WORDS; i++) {
         s->storage[i] = 0x0000000f;
     }
+    /* Diagnostic boot owns no preallocated performance-state slots. */
+    s->storage[0x300 / 4] = 0;
 
     memory_region_init_io(&s->iomem, obj, &s5l8940_pmgr_ops, s, "s5l8940-pmgr", 0x7000);
     sysbus_init_mmio(dev, &s->iomem);
