@@ -110,6 +110,24 @@ def probe(binary, bundle, output, seconds):
                 connection.close()
     # Retain a bounded head and tail, rather than upload repeated multi-GB MMIO polls.
     log_size = log.stat().st_size if log.exists() else 0
+    if log.exists():
+        # Preserve actual 13G37 driver instructions before truncating repeated
+        # exception output; otherwise the interesting initialization is lost.
+        ranges = ((0x80d97200, 0x80d97b00), (0x80c8e000, 0x80c92000))
+        with log.open(errors='replace') as source, (output / 'driver-init.log').open('w') as target:
+            selected, block_bytes, retained = False, 0, 0
+            for line in source:
+                if line.startswith('----------------'):
+                    selected, block_bytes = False, 0
+                address = re.match(r'^0x([0-9a-fA-F]+):', line)
+                if address:
+                    selected = any(start <= int(address.group(1), 16) < end for start, end in ranges)
+                if (selected and block_bytes < 8192) or line.startswith('n94 '):
+                    target.write(line)
+                    block_bytes += len(line)
+                    retained += len(line)
+                    if retained >= 512 << 10:
+                        break
     if log_size > 2 << 20:
         with log.open("rb") as source:
             head = source.read(1 << 20)
