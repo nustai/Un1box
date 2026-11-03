@@ -52,7 +52,8 @@ def diagnostic_performance(pmgr):
     Stock n94 voltage-states1 is entirely blank (bootloader placeholder).
     Use the DT's own nominal-performance1 units, not a guessed MHz value.
     TODO(n94): calibrated voltage-state table and real DVFS transitions.
-    The voltage word remains zero/unknown; this diagnostic is not real DVFS.
+    The second record word remains zero; its full hardware meaning and
+    calibrated voltages are unverified. This diagnostic is not real DVFS.
     """
     table = pmgr.props['voltage-states1'][0]
     nominal_data = pmgr.props['nominal-performance1'][0]

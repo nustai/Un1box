@@ -71,8 +71,9 @@ substitute panel dimensions or patch out the panic based on its wording.
 AppleARMPlatform 0x805536f2..0x80553730 reads eight-byte voltage-states
 records and terminates on the first zero performance. Stock voltage-states1
 is 24 zero bytes. The diagnostic image now supplies one state using the
-existing n94 nominal-performance1 value (81920 in DT units). Voltage remains
-unknown/zero; actual calibrated DVFS is not implemented.
+existing n94 nominal-performance1 value (81920 in DT units). The second
+record word remains zero; its full meaning and calibrated voltages are
+unverified. Actual calibrated DVFS is not implemented.
 Run [41605346742](https://github.com/nustai/un1box-n94/actions/runs/41605346742)
 passes IOReporter setup and prints domain 1 voltage/performance state counts
 of one, then panics with `out of PERF_STATE registers`.
