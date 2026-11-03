@@ -115,3 +115,20 @@ its print format resolves to AppleS5L8940XPL310::start.
 Stock n94 /arm-io/pl310 reg = (0x0e000000,0x1000,0x0fd00000,0x2000),
 thus root ranges 0x3e000000 and 0x3fd00000. Neither is currently modeled.
 Next work is PL310/cache-interface behavior, not more performance-table edits.
+
+## Initial PL310 model
+
+The n94 driver reads Cache Type at 0x80d972c4, derives ways/sets at
+0x80d972e2, then programs DT-supplied latency/feature words at 0x80d97498.
+It writes invalidate-by-way +0x77c at 0x80d975f2 and polls for zero.
+The dedicated n94 model preserves observed control/latency/feature registers;
+maintenance completes immediately because the QEMU memory model is coherent.
+The generic operation offsets are checked against
+[ARM DDI 0246A](https://documentation-service.arm.com/static/5e8e1ac088295d1e18d35cda).
+This implementation is authored for the n94 DT, not copied from another board.
+Cache ID/type default to diagnostic zero with QOM overrides; neither is a
+claim about measured n94 geometry. Actual cache geometry remains TODO.
+The second CIF range has only explicitly diagnostic backing and LOG_UNIMP
+on every access; its command/status semantics remain unimplemented.
+ARM smoke checks control write/read/reset, invalidate completion and CIF
+backing/reset before it emits its UART marker on both machine aliases.
