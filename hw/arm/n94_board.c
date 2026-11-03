@@ -73,6 +73,7 @@ struct N94MachineState {
     /* Boot targets */
     uint32_t kernel_entry;
     uint32_t bootargs_pa;
+    uint32_t boot_fb;
 
     /* Configurable properties matching Un1box Portable invocation */
     char *kboot_path;
@@ -82,6 +83,18 @@ struct N94MachineState {
     char *nand_overlay_path;
     bool baseband;
 };
+
+static uint32_t n94_boot_framebuffer(const uint8_t video[24])
+{
+    uint32_t candidate = ldl_le_p(video);
+    if (ldl_le_p(video + 8) == 640 * 4 && ldl_le_p(video + 12) == 640 &&
+        ldl_le_p(video + 16) == 960 && ldl_le_p(video + 20) == 32 &&
+        candidate >= S5L8940_RAM_BASE &&
+        (uint64_t)candidate + 640 * 960 * 4 <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
+        return candidate;
+    }
+    return 0;
+}
 
 static void n94_load_kboot(N94MachineState *s)
 {
@@ -127,6 +140,11 @@ static void n94_load_kboot(N94MachineState *s)
         exit(EXIT_FAILURE);
     }
     fclose(f);
+    /* ROM blobs may not have been restored to RAM when reset handlers run;
+     * inspect the bootargs in the validated image itself. */
+    if ((uint64_t)args + 44 <= (uint64_t)load + length) {
+        s->boot_fb = n94_boot_framebuffer(image + (args - load) + 20);
+    }
     /* QEMU restores the boot image on every reset, before resuming the CPU. */
     rom_add_blob_fixed("n94.kboot", image, length, load);
     g_free(image);
@@ -241,23 +259,7 @@ static void n94_reset(void *opaque)
     N94MachineState *s = opaque;
     ARMCPU *cpu0 = &s->soc.cpu[0];
     CPUARMState *env = &cpu0->env;
-    uint8_t video[24];
-    uint32_t fb = 0;
-
-    /* Boot video is a view of guest RAM, not an emulated GPU. Accept only
-     * the geometry we can render and an entirely contained RAM range. */
-    if (s->bootargs_pa >= S5L8940_RAM_BASE &&
-        (uint64_t)s->bootargs_pa + 44 <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
-        cpu_physical_memory_read(s->bootargs_pa + 20, video, sizeof(video));
-        uint32_t candidate = ldl_le_p(video);
-        if (ldl_le_p(video + 8) == 640 * 4 && ldl_le_p(video + 12) == 640 &&
-            ldl_le_p(video + 16) == 960 && ldl_le_p(video + 20) == 32 &&
-            candidate >= S5L8940_RAM_BASE &&
-            (uint64_t)candidate + 640 * 960 * 4 <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
-            fb = candidate;
-        }
-    }
-    n94_display_set_boot_framebuffer(s->soc.clcd, fb);
+    n94_display_set_boot_framebuffer(s->soc.clcd, s->boot_fb);
 
     /* 1. Reset PC to entry point */
     if (s->kernel_entry) {
@@ -361,6 +363,7 @@ static void n94_init(MachineState *machine)
 
         cpu_physical_memory_write(N94_BOOTARGS_PA, &ba, sizeof(ba));
         s->bootargs_pa = N94_BOOTARGS_PA;
+        s->boot_fb = N94_FB_BASE;
     }
 
     qemu_register_reset(n94_reset, s);
