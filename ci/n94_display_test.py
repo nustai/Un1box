@@ -46,6 +46,7 @@ def run(binary, directory):
                     t.write((command + '\n').encode())
                     response = t.readline().decode().strip()
                     assert response.startswith('OK'), (command, response)
+                    return response
 
                 def pixel(address, bgra):
                     qtest(f'write 0x{address:x} 4 0x{bgra.hex()}')
@@ -59,6 +60,12 @@ def run(binary, directory):
                     return data[header.end():]
 
                 qmp('qmp_capabilities')
+                # Driver initializes DPCIRQ by writing all ones. A write to
+                # a clear-only status register must not invent pending IRQs.
+                qtest('writel 0x3a10102c 0xffffffff')
+                assert int(qtest('readl 0x3a10102c').split()[1], 0) == 0
+                qtest('writel 0x3a101028 0x1fa42')
+                assert int(qtest('readl 0x3a101028').split()[1], 0) == 0x1fa42
                 pixel(0x8fd00000, bytes.fromhex('0000ff00'))
                 pixel(0x8fd00004, bytes.fromhex('00ff0000'))
                 pixel(0x8fd00000 + 959 * 2560, bytes.fromhex('ff000000'))

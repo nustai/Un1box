@@ -384,3 +384,12 @@ writes +0x00=0x200 and +0x04=3, and main-region writes at +0x2064, +0x1054,
 accesses, not confirmed meanings. The current main-region +0x00/+0x10
 framebuffer interface is a diagnostic assumption and is not validated by
 this trace. No working framebuffer takeover or desktop is demonstrated.
+
+Run 41811235162 preserved translation context: in the stock driver,
+0x80d514c0..0x80d514f2 writes 0xffffffff to +0x102c and then a driver
+value to +0x1028. The driver logs +0x102c as DPCIRQ and at
+0x80d50b9e..0x80d50bc4 reads and writes accumulated status bits back. The
+model now treats +0x102c as write-one-to-clear, an inference requiring
+hardware confirmation. Actual display interrupt generation, masking and
+framebuffer transfer remain unfinished; the test only checks that the
+initial clear does not manufacture pending bits and that +0x1028 stores.

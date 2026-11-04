@@ -113,6 +113,10 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % N94_CLCD_WORDS;
 
+    /* TODO(n94): offsets 0x00..0x20 below are diagnostic interface
+     * assumptions, not verified S5L8940 CLCD register semantics. Stock
+     * 13G37 startup instead accessed offsets including 0x1028 and 0x205c;
+     * do not interpret this fallback as a functional hardware driver. */
     switch (offset) {
     case 0x00: /* CLCD Control / Enable */
         val = s->ctrl;
@@ -149,6 +153,13 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_WORDS;
     n94_display_trace(s->seen_main, offset, true, (uint32_t)value, "main");
+    /* The stock driver reads DPCIRQ at +0x102c, accumulates its bits,
+     * then writes those bits back; initialization writes 0xffffffff.
+     * TODO(n94): verify W1C semantics and model the actual interrupt sources. */
+    if (offset == 0x102c) {
+        s->storage[word_idx] &= ~(uint32_t)value;
+        return;
+    }
     s->storage[word_idx] = (uint32_t)value;
 
     switch (offset) {
