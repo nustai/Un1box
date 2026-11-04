@@ -96,13 +96,17 @@ def main():
     args = parser.parse_args()
     data = find_touch_properties(HFS(RawVolume(args.hfs)))
     parsed = plistlib.loads(data)
-    firmware = parsed['N1F56,1']['Constructed Firmware']
+    profile = parsed['N1F56,1']
+    firmware = profile['Constructed Firmware']
     if not isinstance(firmware, bytes) or not firmware:
         raise ValueError('missing n94 touch firmware')
     if args.output:
         with args.output.open('xb') as destination:
             destination.write(data)
-    print(json.dumps({'personality': 'N1F56,1', 'plist_bytes': len(data),
+    print(json.dumps({'personality': 'N1F56,1',
+                      'bootload_packet_type': profile.get('PreconstructedBootloadPacketType'),
+                      'firmware_version': profile.get('Constructed Firmware Version'),
+                      'plist_bytes': len(data),
                       'plist_sha256': hashlib.sha256(data).hexdigest(),
                       'firmware_bytes': len(firmware),
                       'firmware_sha256': hashlib.sha256(firmware).hexdigest(),

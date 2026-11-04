@@ -325,6 +325,9 @@ resource fork expands into an 84,448-byte plist with personality `N1F56,1`
 and a 59,980-byte `Constructed Firmware` property. This locates n94-specific
 firmware data; it has not been uploaded to a touch controller and does not
 establish SPI, bootloader packet or input-event emulation.
+The profile identifies `PreconstructedBootloadPacketType` as `Z2` and
+`Constructed Firmware Version` as `0x0098.bin`; this is metadata from the
+stock volume, not a successful firmware upload or touch-controller emulation.
 `ci/n94_touch_firmware.py` now reproducibly reads and validates this plist
 from a local HFS volume, optionally saving it locally without overwriting an
 existing file. Its resource parser limits each expanded chunk and rejects
