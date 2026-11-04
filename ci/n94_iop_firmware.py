@@ -109,6 +109,28 @@ def prepare_diagnostic(firmware, heap_base, page_table_base):
     return bytes(result)
 
 
+def prepare_diagnostic_rings(firmware, rings):
+    """Populate five observed config pairs; caller still owns ring memory/phase."""
+    offsets = (0x13010, 0x13018, 0x13028, 0x13038, 0x13040)
+    if len(firmware) < offsets[-1] + 8 or len(rings) != len(offsets):
+        raise ValueError('expected five diagnostic ring configurations')
+    occupied = []
+    for offset, (address, count) in zip(offsets, rings):
+        if struct.unpack_from('<II', firmware, offset) != (0, 0):
+            raise ValueError('unexpected IOP ring placeholders')
+        if (not 1 <= count <= 256 or address % 64 or address < 0x80000000 or
+                address + count * 64 > 0xa0000000):
+            raise ValueError('invalid diagnostic IOP ring')
+        end = address + count * 64
+        if any(address < other_end and other_start < end for other_start, other_end in occupied):
+            raise ValueError('diagnostic IOP rings overlap')
+        occupied.append((address, end))
+    result = bytearray(firmware)
+    for offset, (address, count) in zip(offsets, rings):
+        struct.pack_into('<II', result, offset, address, count)
+    return bytes(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kernel', type=pathlib.Path, help='local decrypted n94 kernelcache')

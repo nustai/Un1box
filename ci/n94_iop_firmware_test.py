@@ -4,7 +4,7 @@ import struct
 import unittest
 from unittest.mock import patch
 
-from n94_iop_firmware import extract, prepare_diagnostic
+from n94_iop_firmware import extract, prepare_diagnostic, prepare_diagnostic_rings
 
 
 def kernel_fixture():
@@ -28,6 +28,19 @@ def kernel_fixture():
 
 
 class IOPFirmwareTests(unittest.TestCase):
+    def test_ring_preparation_checks_ranges_and_does_not_mutate_input(self):
+        source = bytes(0x23000)
+        rings = [(0x80100000 + index * 0x1000, 8) for index in range(5)]
+        prepared = prepare_diagnostic_rings(source, rings)
+        self.assertEqual(struct.unpack_from('<II', prepared, 0x13028), rings[2])
+        self.assertEqual(source[0x13028:0x13030], bytes(8))
+        with self.assertRaisesRegex(ValueError, 'overlap'):
+            prepare_diagnostic_rings(source, [rings[0]] * 5)
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            prepare_diagnostic_rings(source, [(0x80100001, 8)] + rings[1:])
+        with self.assertRaisesRegex(ValueError, 'placeholders'):
+            prepare_diagnostic_rings(prepared, rings)
+
     def test_prepare_validates_placeholders_alignment_and_overlap(self):
         firmware = bytearray(0x23000)
         for offset in (0x1318c, 0x13190, 0x1334c):

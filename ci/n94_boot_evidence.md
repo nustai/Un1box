@@ -412,6 +412,13 @@ copy by setting only those three published variables. It rejects invalid or
 overlapping regions, unexpected placeholders and unaligned page tables. Its
 unit tests and the real 13G37 image passed; the isolated harness uses this
 same preparation. The message-channel configuration remains unimplemented.
+In the separate Unicorn harness, the firmware reads address/count pairs from
+config offsets +0x10, +0x18, +0x28, +0x38 and +0x40. Supplying five
+explicitly hypothetical 8-entry rings, initializing their phases, and using
+the other diagnostic substitutions lets it execute 200,000 instructions
+without an unmapped access. This does not show a successful AP/IOP handshake
+or NAND access. `prepare_diagnostic_rings` validates and fills those five
+pairs only; it does not allocate shared memory or implement mailbox events.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
