@@ -60,16 +60,16 @@ struct N94DisplayState {
     uint8_t seen_sub2[N94_CLCD_SUB2_WORDS];
 };
 
-/* Log the first read and write of each register without flooding the trace. */
+/* Log up to four reads and writes per register without flooding the trace. */
 static void n94_display_trace(uint8_t *seen, hwaddr offset, bool write, uint32_t value,
                               const char *region)
 {
-    uint8_t bit = write ? 2 : 1;
     uint8_t *entry = &seen[offset / 4];
-    if (!(*entry & bit)) {
-        *entry |= bit;
-        qemu_log_mask(LOG_UNIMP, "n94 CLCD %s first %s +0x%" HWADDR_PRIx " = 0x%08x\n",
-                      region, write ? "write" : "read", offset, value);
+    unsigned count = write ? (*entry >> 4) : (*entry & 0xf);
+    if (count < 4) {
+        *entry += write ? 0x10 : 1;
+        qemu_log_mask(LOG_UNIMP, "n94 CLCD %s %s #%u +0x%" HWADDR_PRIx " = 0x%08x\n",
+                      region, write ? "write" : "read", count + 1, offset, value);
     }
 }
 

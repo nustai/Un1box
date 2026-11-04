@@ -365,3 +365,11 @@ restore evidence check passed. It used the insecure single-CPU diagnostic
 and omitted TV-out, encoder, GPU and JPEG. It did not perform the CLCD
 handoff experiment, and the driver reported CLCD uninitialized. The screen
 remained black with an 8-by-16 rectangle; this is not SpringBoard.
+
+Run 41798408611 applied and verified the explicitly inferred CLCD values
+before CPU start. Both boot candidates reported CLCD DisplayPipe start and
+reached launchd in the diagnostic restore environment; the evidence check
+passed. The captured screen was still black apart from the 8-by-16 rectangle.
+Instruction and exception logging in that run filled the 8 MiB trace budget,
+so later CLCD accesses may not have been preserved. Subsequent CLCD probes
+omit these high-volume logs and identify that fact in execution evidence.
