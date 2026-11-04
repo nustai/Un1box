@@ -319,6 +319,18 @@ omits this node to study subsequent initialization; JPEG acceleration and
 any software fallback remain unverified. The kernel-probe workflow accepts
 an explicit list of omitted devices and rejects unknown names.
 
+Read-only catalog inspection of the decrypted stock root volume found
+`/usr/share/firmware/multitouch/N94.mtprops`. Its 51,785-byte compressed
+resource fork expands into an 84,448-byte plist with personality `N1F56,1`
+and a 59,980-byte `Constructed Firmware` property. This locates n94-specific
+firmware data; it has not been uploaded to a touch controller and does not
+establish SPI, bootloader packet or input-event emulation.
+`ci/n94_touch_firmware.py` now reproducibly reads and validates this plist
+from a local HFS volume, optionally saving it locally without overwriting an
+existing file. Its resource parser limits each expanded chunk and rejects
+invalid bounds; two unit tests cover the observed multi-chunk layout and
+malformed/oversized inputs. It emits hashes and metadata, never firmware bytes.
+
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
 same instruction as scaler0. The captured post-fault translations map the
