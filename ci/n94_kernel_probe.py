@@ -25,10 +25,10 @@ def probe(binary, bundle, output, seconds):
         qtest_port = reservation.getsockname()[1]
     breakpoint_address = os.environ.get('N94_BREAKPOINT')
     clcd_handoff = os.environ.get('N94_DIAGNOSTIC_CLCD_HANDOFF') == 'true'
-    # Avoid exhausting the trace budget on exception/instruction logs when
-    # the goal is to observe device accesses throughout the CLCD experiment.
+    # Exception logs can exhaust the trace budget during demand paging;
+    # retain translated instructions for correlation with device accesses.
     if clcd_handoff:
-        log_flags = 'guest_errors,unimp'
+        log_flags = 'in_asm,guest_errors,unimp'
     else:
         log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
     command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
@@ -285,7 +285,7 @@ def probe(binary, bundle, output, seconds):
                     exception_counts[match.group(1)] += 1
         (output / 'execution-evidence.json').write_text(json.dumps({
             'note': 'Low addresses are observed translation blocks, not proof of a user process; QEMU in_asm logs translation, not every execution.',
-            'instruction_tracing_enabled': not clcd_handoff,
+            'instruction_tracing_enabled': True,
             'exception_tracing_enabled': not bool(breakpoint_address or clcd_handoff),
             'low_address_translation_blocks': sum(low_pc.values()),
             'low_address_examples': low_pc.most_common(32),

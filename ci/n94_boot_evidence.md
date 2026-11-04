@@ -372,4 +372,15 @@ reached launchd in the diagnostic restore environment; the evidence check
 passed. The captured screen was still black apart from the 8-by-16 rectangle.
 Instruction and exception logging in that run filled the 8 MiB trace budget,
 so later CLCD accesses may not have been preserved. Subsequent CLCD probes
-omit these high-volume logs and identify that fact in execution evidence.
+omit the high-volume exception log and retain instruction-translation logs;
+execution evidence records which logging was enabled. Translation-block logs
+are not a complete instruction-execution trace.
+
+Run 41800259345 passed the restore evidence check and captured only 27,032
+bytes of device logging in v3. Both boot-args candidates observed the same
+CLCD startup sequence after the diagnostic handoff: sub1 reads +0x60/+0x50,
+writes +0x00=0x200 and +0x04=3, and main-region writes at +0x2064, +0x1054,
++0x105c, +0x205c, +0x2060, +0x102c and +0x1028. These are observed guest
+accesses, not confirmed meanings. The current main-region +0x00/+0x10
+framebuffer interface is a diagnostic assumption and is not validated by
+this trace. No working framebuffer takeover or desktop is demonstrated.
