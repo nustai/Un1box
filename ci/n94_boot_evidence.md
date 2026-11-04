@@ -376,6 +376,12 @@ the clear poll and next touches 0x3f200010. This is not hardware validation.
 The QEMU PMGR model now includes inferred shared bits at +0x1200/+0x1204,
 with a QTest for set, clear, independent bits and reset; actual bit meanings,
 reset state, IOP CPU and mailbox remain unverified.
+In the isolated Unicorn harness, adding plain diagnostic backing for AIC
+0x3f200000 lets firmware access its registers, but execution reaches an
+explicit self-loop at image PC 0xae8c after a call from 0xb340. This run also
+uses a fabricated page-table pointer and hypothesized PMGR gates, and has no
+interrupts or timer behavior. It does not establish why the loop is reached
+or demonstrate IOP execution in QEMU. See `iop-unicorn-gates.json`.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
