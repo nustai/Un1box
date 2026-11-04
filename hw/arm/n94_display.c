@@ -98,7 +98,9 @@ static void n94_vblank_tick(void *opaque)
 {
     N94DisplayState *s = opaque;
 
-    /* Pulse VBLANK interrupts for iOS CoreAnimation sync (DeviceTree order: 0x2b first, 0x2a second) */
+    /* TODO(n94): replace diagnostic pulses with verified DPCIRQ status,
+     * masking, timing and AIC delivery. DT lists 0x2b then 0x2a; their
+     * respective event semantics are not yet established. */
     qemu_irq_pulse(s->vblank_irq[0]);
     qemu_irq_pulse(s->vblank_irq[1]);
 
