@@ -332,6 +332,13 @@ The stock kernel's n94 IOKit personality selects `AppleMultitouchN1SPI`,
 provider `AppleARMSPIDevice`, and `mt-merge-personality` `N1F56,1`. This
 links the kernel driver personality to the identified firmware profile;
 its SPI transactions, firmware protocol and input events remain unimplemented.
+The driver code at 0x807ebdca..0x807ebe5c accepts response 0xea or, under
+an internal flag, 0xeb; it validates the low byte of the sum of five header
+bytes, derives the payload length from bytes 2..3, and compares a 16-bit
+additive payload checksum against the transfer's final two bytes. The bounded
+subset decoder and malformed-frame tests in `ci/n94_touch_z2*.py` implement
+these observed checks. No real packet capture or end-to-end touch input has
+yet validated the decoder or any complete touchscreen protocol.
 `ci/n94_touch_firmware.py` now reproducibly reads and validates this plist
 from a local HFS volume, optionally saving it locally without overwriting an
 existing file. Its resource parser limits each expanded chunk and rejects
@@ -344,3 +351,13 @@ same instruction as scaler0. The captured post-fault translations map the
 access to physical 0x38400260 in both cases, matching the independent n94
 scaler1 DT node. A second diagnostic register instance is added at 0x38400000;
 it remains register storage without scaling, DMA or interrupt behavior.
+Host build 41795232174 passed the model, reset and display tests. In run
+41796216315, v2 did not reach the CLCD breakpoint during 60 samples; its
+last UART line reports an invalid USB PHY clock. The run failed before v3
+was tested. This is a time-bounded observation, not a proven permanent hang.
+The subsequent run 41796719596 without a breakpoint reached BSD root md0
+and launchd's restore-environment message in both candidates; the dedicated
+restore evidence check passed. It used the insecure single-CPU diagnostic
+and omitted TV-out, encoder, GPU and JPEG. It did not perform the CLCD
+handoff experiment, and the driver reported CLCD uninitialized. The screen
+remained black with an 8-by-16 rectangle; this is not SpringBoard.

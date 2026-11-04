@@ -74,6 +74,7 @@ jobs:
             'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
           python3 ci/n94_prepare_test.py
           python3 ci/n94_touch_firmware_test.py
+          python3 ci/n94_touch_z2_test.py
           flags=()
           if [ "$RESTORE_RAMDISK" = true ]; then flags+=(--restore-ramdisk); fi
           if [ "$DIAGNOSTIC_NO_SECURE_ROOT" = true ]; then flags+=(--diagnostic-no-secure-root); fi
