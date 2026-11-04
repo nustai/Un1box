@@ -12,7 +12,8 @@ def decode_result_frame(frame, *, allow_alternate=False):
     The caller supplies the entire SPI transfer, including optional padding.
     Byte 0 is 0xea, or 0xeb when the driver enables the alternate response.
     Bytes 2..3 encode payload length plus two checksum bytes (little-endian).
-    The last two bytes of the transfer contain the payload checksum.
+    The last two bytes of the transfer contain the payload checksum. Empty
+    control responses with a zero length field are outside this subset.
     """
     frame = bytes(frame)
     if len(frame) < 7:
