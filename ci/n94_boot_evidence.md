@@ -382,6 +382,8 @@ explicit self-loop at image PC 0xae8c after a call from 0xb340. This run also
 uses a fabricated page-table pointer and hypothesized PMGR gates, and has no
 interrupts or timer behavior. It does not establish why the loop is reached
 or demonstrate IOP execution in QEMU. See `iop-unicorn-gates.json`.
+At that loop entry the observed CPSR is 0x200000f3 (IRQ and FIQ masked),
+under the harness's assumed CPU and memory setup. Its reason remains unknown.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
