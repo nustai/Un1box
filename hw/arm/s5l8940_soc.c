@@ -93,6 +93,10 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *scaler = qdev_new("n94-scaler");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(scaler), 0, 0x38300000);
+    /* The n94 DT exposes a second independent scaler at 0x38400000. */
+    DeviceState *scaler1 = qdev_new("n94-scaler");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler1), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(scaler1), 0, 0x38400000);
     DeviceState *mipi = qdev_new("n94-mipi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);

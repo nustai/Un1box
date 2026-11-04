@@ -318,3 +318,10 @@ both boot-args candidates, matching the n94 jpeg node. An optional diagnostic
 omits this node to study subsequent initialization; JPEG acceleration and
 any software fallback remain unverified. The kernel-probe workflow accepts
 an explicit list of omitted devices and rejects unknown names.
+
+Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
+JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
+same instruction as scaler0. The captured post-fault translations map the
+access to physical 0x38400260 in both cases, matching the independent n94
+scaler1 DT node. A second diagnostic register instance is added at 0x38400000;
+it remains register storage without scaling, DMA or interrupt behavior.
