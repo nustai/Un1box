@@ -388,6 +388,30 @@ interrupts or timer behavior. It does not establish why the loop is reached
 or demonstrate IOP execution in QEMU. See `iop-unicorn-gates.json`.
 At that loop entry the observed CPSR is 0x200000f3 (IRQ and FIQ masked),
 under the harness's assumed CPU and memory setup. Its reason remains unknown.
+Further tracing shows the call to the firmware diagnostic path comes from
+image PC 0xdb72 after its allocator searches 32 lists for a 0x1c-byte
+allocation. With an explicitly substituted bounded allocator, additional
+firmware code runs and eventually reads 0xffffffff through a structure at
+image PC 0x104e. Its object held 0xffffffff at offset +0x14 in that test.
+This artificial allocator bypasses firmware behavior and is only useful for
+locating later dependencies; neither the actual IOP heap nor that structure's
+meaning or initialization is verified. See `iop-unicorn-allocator.json`.
+The stock firmware kext publishes ConfigurationOffset=0x13000,
+HeapBaseOffset=0x1318c, HeapSizeOffset=0x13190, HeapRequired=0xb000,
+PageTableBase=0x1334c and PageTableSize=0x13348; the last location contains
+0x4000 in the image. These offsets are obtained from its property setup at
+0x80e79bde..0x80e79c62. With a hypothetical heap at 0x30000, the published
+heap size, the experimental table, and placeholder PMGR/AIC, Unicorn runs
+the firmware's own allocator without interception. It reaches PC 0x104e and
+an invalid pointer after reading zero values from configuration +0x10/+0x14.
+This establishes a missing configuration dependency in that experiment,
+not real IOP execution or the correct host-visible addresses. See
+`iop-unicorn-native-heap.json`.
+`ci/n94_iop_firmware.py` can now optionally prepare a new local diagnostic
+copy by setting only those three published variables. It rejects invalid or
+overlapping regions, unexpected placeholders and unaligned page tables. Its
+unit tests and the real 13G37 image passed; the isolated harness uses this
+same preparation. The message-channel configuration remains unimplemented.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the

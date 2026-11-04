@@ -4,7 +4,7 @@ import struct
 import unittest
 from unittest.mock import patch
 
-from n94_iop_firmware import extract
+from n94_iop_firmware import extract, prepare_diagnostic
 
 
 def kernel_fixture():
@@ -28,6 +28,23 @@ def kernel_fixture():
 
 
 class IOPFirmwareTests(unittest.TestCase):
+    def test_prepare_validates_placeholders_alignment_and_overlap(self):
+        firmware = bytearray(0x23000)
+        for offset in (0x1318c, 0x13190, 0x1334c):
+            struct.pack_into('<I', firmware, offset, 0xffffffff)
+        struct.pack_into('<I', firmware, 0x13348, 0x4000)
+        before = bytes(firmware)
+        prepared = prepare_diagnostic(firmware, 0x30000, 0x40000)
+        self.assertEqual(bytes(firmware), before)
+        self.assertEqual(struct.unpack_from('<II', prepared, 0x1318c), (0x30000, 0xb000))
+        self.assertEqual(struct.unpack_from('<I', prepared, 0x1334c)[0], 0x40000)
+        with self.assertRaisesRegex(ValueError, 'overlap'):
+            prepare_diagnostic(firmware, 0x3c000, 0x40000)
+        with self.assertRaisesRegex(ValueError, 'layout'):
+            prepare_diagnostic(firmware, 0x30000, 0x41000)
+        with self.assertRaisesRegex(ValueError, 'placeholders'):
+            prepare_diagnostic(prepared, 0x30000, 0x40000)
+
     def test_extract_section_and_reject_invalid_vector(self):
         image, segments = kernel_fixture()
         with patch('n94_iop_firmware.macho', return_value=(segments, 0)):

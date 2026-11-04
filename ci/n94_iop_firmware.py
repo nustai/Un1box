@@ -10,6 +10,11 @@ import xml.etree.ElementTree as ET
 from n94_prepare_kernel import macho
 
 IDENTIFIER = 'com.apple.driver.IOP_s5l8940xiop_firmware'
+HEAP_BASE_OFFSET = 0x1318c
+HEAP_SIZE_OFFSET = 0x13190
+PAGE_TABLE_SIZE_OFFSET = 0x13348
+PAGE_TABLE_BASE_OFFSET = 0x1334c
+HEAP_REQUIRED = 0xb000
 
 
 def extract(kernel):
@@ -82,17 +87,52 @@ def extract(kernel):
     return address, firmware
 
 
+def prepare_diagnostic(firmware, heap_base, page_table_base):
+    """Populate published boot variables, not the still-unknown IOP rings."""
+    if len(firmware) < PAGE_TABLE_BASE_OFFSET + 4:
+        raise ValueError('short n94 IOP firmware')
+    if (heap_base <= 0 or heap_base % 4 or page_table_base <= 0 or
+            page_table_base % 0x4000 or heap_base + HEAP_REQUIRED > 1 << 32 or
+            page_table_base + 0x4000 > 1 << 32):
+        raise ValueError('invalid diagnostic IOP memory layout')
+    if heap_base < page_table_base + 0x4000 and page_table_base < heap_base + HEAP_REQUIRED:
+        raise ValueError('diagnostic IOP heap and page table overlap')
+    page_size = struct.unpack_from('<I', firmware, PAGE_TABLE_SIZE_OFFSET)[0]
+    sentinels = [struct.unpack_from('<I', firmware, offset)[0] for offset in
+                 (HEAP_BASE_OFFSET, HEAP_SIZE_OFFSET, PAGE_TABLE_BASE_OFFSET)]
+    if page_size != 0x4000 or sentinels != [0xffffffff] * 3:
+        raise ValueError('unexpected stock IOP boot-variable placeholders')
+    result = bytearray(firmware)
+    struct.pack_into('<I', result, HEAP_BASE_OFFSET, heap_base)
+    struct.pack_into('<I', result, HEAP_SIZE_OFFSET, HEAP_REQUIRED)
+    struct.pack_into('<I', result, PAGE_TABLE_BASE_OFFSET, page_table_base)
+    return bytes(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kernel', type=pathlib.Path, help='local decrypted n94 kernelcache')
     parser.add_argument('--output', type=pathlib.Path, help='optional new local firmware file')
+    parser.add_argument('--diagnostic-heap-base', type=lambda value: int(value, 0),
+                        help='hypothetical IOP-visible heap address; requires page table and output')
+    parser.add_argument('--diagnostic-page-table-base', type=lambda value: int(value, 0),
+                        help='hypothetical aligned IOP-visible page-table address')
     args = parser.parse_args()
     address, firmware = extract(args.kernel.read_bytes())
+    diagnostic = args.diagnostic_heap_base is not None or args.diagnostic_page_table_base is not None
+    if diagnostic:
+        if args.output is None or args.diagnostic_heap_base is None or args.diagnostic_page_table_base is None:
+            parser.error('diagnostic preparation requires both addresses and --output')
+        output_data = prepare_diagnostic(firmware, args.diagnostic_heap_base, args.diagnostic_page_table_base)
+    else:
+        output_data = firmware
     if args.output:
         with args.output.open('xb') as output:
-            output.write(firmware)
+            output.write(output_data)
     print(json.dumps({'kext': IDENTIFIER, 'address': hex(address), 'firmware_bytes': len(firmware),
-                      'sha256': hashlib.sha256(firmware).hexdigest(), 'iop_emulated': False}))
+                      'sha256': hashlib.sha256(firmware).hexdigest(), 'diagnostic_prepared': diagnostic,
+                      'diagnostic_output_sha256': hashlib.sha256(output_data).hexdigest() if diagnostic else None,
+                      'iop_emulated': False}))
 
 
 if __name__ == '__main__':
