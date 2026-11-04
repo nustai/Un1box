@@ -291,6 +291,19 @@ def probe(binary, bundle, output, seconds):
             'low_address_examples': low_pc.most_common(32),
             'logged_exceptions': dict(exception_counts),
         }, indent=2))
+        # Preserve nearby translation logs before head/tail truncation. These
+        # are context only: in_asm records translation, not execution order.
+        with log.open(errors='replace') as source, (output / 'clcd-access-context.log').open('w') as target:
+            context = collections.deque(maxlen=80)
+            retained = 0
+            for line in source:
+                if line.startswith('n94 CLCD '):
+                    block = ''.join(context) + line
+                    if retained + len(block) > 512 << 10:
+                        break
+                    target.write('\n--- CLCD access (preceding translation context) ---\n' + block)
+                    retained += len(block)
+                context.append(line)
         # Preserve surrounding control flow before truncation. This is useful
         # when a device start routine calls another driver and never returns.
         starts = ('0x811a875e:', '0x80e4b560:', '0x80551744:')
@@ -313,7 +326,8 @@ def probe(binary, bundle, output, seconds):
                   (0x8108f000, 0x81097000),  # EmbeddedIOP
                   (0x811a8000, 0x811ab000),  # AppleA5IOP
                   (0x80f09000, 0x80f0d000),  # AppleInterruptController
-                  (0x80849000, 0x80857000))  # IOCryptoAcceleratorFamily
+                  (0x80849000, 0x80857000),  # IOCryptoAcceleratorFamily
+                  (0x80d4a000, 0x80d60000))  # AppleH4PCLCD
         with log.open(errors='replace') as source, (output / 'driver-init.log').open('w') as target:
             selected, block_bytes, retained = False, 0, 0
             for line in source:
