@@ -79,7 +79,7 @@ class Preparation(unittest.TestCase):
             chosen.props[name] = (b"placeholder\0", 0x80000000)
         root = node("device-tree", [node("memory", reg=bytes(8)), chosen,
                                      node("cpus", [node("cpu0")]), node("vram", reg=bytes(8)), node("pram", reg=bytes(8)),
-                                     node('arm-io', [node('tv-out'), node('vxe'), node('sgx'), node('pmgr', **{'voltage-states1': bytes(24),
+                                     node('arm-io', [node('tv-out'), node('vxe'), node('sgx'), node('jpeg'), node('pmgr', **{'voltage-states1': bytes(24),
                                                                    'nominal-performance1': u32(0x14000)})])])
         raw = root.encode()
         with self.assertRaisesRegex(ValueError, "escaped"):
@@ -95,7 +95,7 @@ class Preparation(unittest.TestCase):
             for version in (2, 3):
                 prepare(kernel, raw, version, output, diagnostic_single_cpu=(version == 3),
                         diagnostic_no_tv_out=(version == 3), diagnostic_no_vxe=(version == 3),
-                        diagnostic_no_sgx=(version == 3))
+                        diagnostic_no_sgx=(version == 3), diagnostic_no_jpeg=(version == 3))
                 image = (output / f"n94-v{version}.kboot").read_bytes()
                 magic, base, entry, args, length = struct.unpack_from("<8s4I", image, len(image) - 24)
                 self.assertEqual((magic, base, entry, length), (b"N94KBOOT", 0x80000000, 0x80001000, len(image) - 24))
@@ -117,6 +117,8 @@ class Preparation(unittest.TestCase):
                                      for child in tree.at('arm-io').children), version == 2)
                 self.assertEqual(any(child.props['name'][0] == b'sgx\0'
                                      for child in tree.at('arm-io').children), version == 2)
+                self.assertEqual(any(child.props['name'][0] == b'jpeg\0'
+                                     for child in tree.at('arm-io').children), version == 2)
                 seed = tree.at("chosen").props["random-seed"][0]
                 self.assertEqual(len(seed), 64)
                 self.assertTrue(any(seed))
@@ -129,6 +131,7 @@ class Preparation(unittest.TestCase):
                 self.assertEqual(report['diagnostic_no_tv_out'], version == 3)
                 self.assertEqual(report['diagnostic_no_vxe'], version == 3)
                 self.assertEqual(report['diagnostic_no_sgx'], version == 3)
+                self.assertEqual(report['diagnostic_no_jpeg'], version == 3)
                 self.assertEqual(report["firmware_property_flags_cleared"], 2)
 
 

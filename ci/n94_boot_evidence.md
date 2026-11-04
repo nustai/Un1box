@@ -298,3 +298,23 @@ later panicked at the unimplemented SGX access. A green status here means
 trace collection and does not mean a usable display or iOS boot. An additional
 opt-in no-SGX DT experiment isolates subsequent startup; it does not provide
 software rendering or indicate that SpringBoard can run without the GPU.
+
+In run 41793671154 the opt-in no-SGX and CLCD handoff experiments reached
+`BSD root: md0` and the CLCD DisplayPipe start, then both candidates panicked
+in AppleJPEGDriver at 0x80838d46 while reading offset 0x8c of an unmodeled
+device. The trace is a restore ramdisk with altered device tree and disabled
+secure root, not a normal iOS boot. Its v3 screen remains black apart from
+the same 8-by-16 white rectangle. The workflow's success indicates trace
+collection only because breakpoint runs skip the restore-userspace check.
+
+The stock n94 DT places `multi-touch,n94` under `arm-io/spi1`, whose resource
+is physical 0x32100000 and AIC interrupt 0x1d. The touch child has a separate
+GPIO-parent interrupt and its 1024-byte calibration property is zero-filled.
+There is currently no n94 SPI1 or touch controller model; this identifies the
+path to research and does not establish its protocol or calibrated behavior.
+
+Run 41794118257 mapped the JPEG driver's register base to 0x38200000 in
+both boot-args candidates, matching the n94 jpeg node. An optional diagnostic
+omits this node to study subsequent initialization; JPEG acceleration and
+any software fallback remain unverified. The kernel-probe workflow accepts
+an explicit list of omitted devices and rejects unknown names.
