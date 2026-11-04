@@ -79,6 +79,16 @@ def run(binary, directory):
                 qtest('writel 0x3a100000 0x1')
                 assert screenshot()[:3] == bytes.fromhex('0000ff')
                 print('PASS configured framebuffer takes over the boot display', flush=True)
+                qtest('writel 0x39200050 0x1')
+                qtest('writel 0x39300004 0x12345678')
+                qmp('system_reset')
+                assert int(qtest('readl 0x3a101028').split()[1], 0) == 0
+                assert int(qtest('readl 0x39200050').split()[1], 0) == 0
+                assert int(qtest('readl 0x39300004').split()[1], 0) == 0
+                # The board's validated boot-framebuffer handoff survives reset.
+                pixel(0x8fd00000, bytes.fromhex('0000ff00'))
+                assert screenshot()[:3] == bytes.fromhex('ff0000')
+                print('PASS display reset clears registers and restores boot framebuffer', flush=True)
                 q.write(b'{"execute":"quit"}\n')
                 process.wait(timeout=10)
                 assert process.returncode == 0

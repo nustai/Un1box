@@ -287,10 +287,28 @@ static void n94_display_realize(DeviceState *dev, Error **errp)
     qemu_console_resize(s->con, N94_DISPLAY_WIDTH, N94_DISPLAY_HEIGHT);
 }
 
+static void n94_display_reset(DeviceState *dev)
+{
+    N94DisplayState *s = N94_DISPLAY(dev);
+    /* TODO(n94): verify reset values against S5L8940 hardware. */
+    s->fb_base = 0;
+    s->ctrl = 0;
+    s->status = 0;
+    s->enabled = false;
+    s->guest_configured = false;
+    memset(s->storage, 0, sizeof(s->storage));
+    memset(s->storage_sub1, 0, sizeof(s->storage_sub1));
+    memset(s->storage_sub2, 0, sizeof(s->storage_sub2));
+    memset(s->seen_main, 0, sizeof(s->seen_main));
+    memset(s->seen_sub1, 0, sizeof(s->seen_sub1));
+    memset(s->seen_sub2, 0, sizeof(s->seen_sub2));
+}
+
 static void n94_display_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = n94_display_realize;
+    device_class_set_legacy_reset(dc, n94_display_reset);
 }
 
 static const TypeInfo n94_display_info = {

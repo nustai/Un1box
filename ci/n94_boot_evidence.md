@@ -393,3 +393,8 @@ model now treats +0x102c as write-one-to-clear, an inference requiring
 hardware confirmation. Actual display interrupt generation, masking and
 framebuffer transfer remain unfinished; the test only checks that the
 initial clear does not manufacture pending bits and that +0x1028 stores.
+Run 41812679978 passed the diagnostic restore evidence check in both boot
+candidates with this change; the screenshot still contains only the small
+white rectangle. The display model now also clears its diagnostic registers
+and guest takeover state on reset while preserving the board's boot framebuffer
+handoff. Hardware reset values remain unverified; a host reset test is pending.
