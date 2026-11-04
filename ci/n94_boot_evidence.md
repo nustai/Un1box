@@ -353,6 +353,20 @@ embedded firmware, not its execution: IOP CPU, mailbox, NAND and FTL are not
 implemented. `ci/n94_iop_firmware.py` locates and validates the section from
 a local decrypted kernel, prints only metadata and optionally exports to a
 new local file. It was checked against the actual n94 kernelcache.
+The IOP image contains the little-endian `cnfg` marker at image offset
+0x13000 followed by zero-filled words and additional data. This records a
+location for further analysis, not a validated mailbox layout or initialized
+configuration; the values and hardware address mapping remain unknown.
+An exploratory Unicorn run loads the extracted stock image at zero into a
+hypothetical 256 KiB private RAM, using Unicorn's default ARM CPU (not a
+verified IOP model). It executes reset and banked-mode setup, then stops at
+image PC 0xc2a6 when a store targets 0xffffffff (R0=0xffffffff, LR=0xc329).
+Trace: `n94_diagnostic_traces/iop-unicorn.json`. This isolated experiment
+does not establish the cause, execute an emulated IOP in QEMU, or access NAND.
+In that run the pointer was read from image address 0x1334c, where the
+original image already contains 0xffffffff; no write to that word was
+observed before the fault. The host boot contract and expected initial
+registers and memory layout have not been established.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
