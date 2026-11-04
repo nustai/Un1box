@@ -355,6 +355,10 @@ Host build 41795232174 passed the model, reset and display tests. In run
 41796216315, v2 did not reach the CLCD breakpoint during 60 samples; its
 last UART line reports an invalid USB PHY clock. The run failed before v3
 was tested. This is a time-bounded observation, not a proven permanent hang.
+The same breakpoint was not reached on a repeat in run 41797240965. To avoid
+depending on guest scheduling for this experiment, the probe now applies and
+reads back the same explicitly assumed CLCD values through QTest before the
+guest executes; it remains a diagnostic hypothesis and not a real iBoot.
 The subsequent run 41796719596 without a breakpoint reached BSD root md0
 and launchd's restore-environment message in both candidates; the dedicated
 restore evidence check passed. It used the insecure single-CPU diagnostic

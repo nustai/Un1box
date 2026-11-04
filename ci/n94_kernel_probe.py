@@ -20,7 +20,11 @@ def probe(binary, bundle, output, seconds):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         gdb_port = reservation.getsockname()[1]
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        qtest_port = reservation.getsockname()[1]
     breakpoint_address = os.environ.get('N94_BREAKPOINT')
+    clcd_handoff = os.environ.get('N94_DIAGNOSTIC_CLCD_HANDOFF') == 'true'
     # Exception tracing can grow tens of MB per second in demand-paged
     # guests; breakpoint runs prioritize reaching the requested instruction.
     log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
@@ -29,6 +33,9 @@ def probe(binary, bundle, output, seconds):
                "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", log_flags, "-D", str(log)]
     if breakpoint_address:
         command += ['-gdb', f'tcp:127.0.0.1:{gdb_port}']
+    if clcd_handoff:
+        command += ['-qtest', f'tcp:127.0.0.1:{qtest_port},server=on,wait=off',
+                    '-qtest-log', str(output / 'qtest.log')]
     snapshots = []
     failure = None
     breakpoint_hit = False
@@ -69,6 +76,28 @@ def probe(binary, bundle, output, seconds):
                         return reply["return"]
 
             qmp("qmp_capabilities")
+            if clcd_handoff:
+                # Values are an explicit, unverified handoff hypothesis; use
+                # physical MMIO before the guest starts and verify readback.
+                with socket.create_connection(('127.0.0.1', qtest_port), timeout=10) as qtest:
+                    qtest.settimeout(10)
+                    qstream = qtest.makefile('rwb', buffering=0)
+                    def qtest_command(command):
+                        qstream.write((command + '\n').encode())
+                        reply = qstream.readline().decode().strip()
+                        if not reply.startswith('OK'):
+                            raise RuntimeError(f'QTest rejected {command}: {reply}')
+                        return reply
+                    qtest_command('writel 0x39200050 0x1')
+                    qtest_command('writel 0x39200060 0x03c00280')
+                    observed = [qtest_command('readl 0x39200050'), qtest_command('readl 0x39200060')]
+                    values = [int(reply.split()[1], 0) for reply in observed]
+                    if values != [1, 0x03c00280]:
+                        raise RuntimeError(f'CLCD diagnostic writes did not read back: {observed}')
+                    (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
+                        'diagnostic_only': True, 'physical_base': '0x39200000',
+                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280'},
+                        'observed': observed}, indent=2))
             if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
                 debugger.settimeout(10)
@@ -129,23 +158,6 @@ def probe(binary, bundle, output, seconds):
                          'r1_virtual_address': hex(r1_address), 'r1_mapping': r1_mapping,
                          'object_words': object_words, 'initial_frame': frame_before}, indent=2))
                     breakpoint_hit = True
-                    if os.environ.get('N94_DIAGNOSTIC_CLCD_HANDOFF') == 'true':
-                        if int(breakpoint_address, 0) != 0x80d4cb40 or 'gpa: 0x39200000' not in mapping:
-                            raise RuntimeError('CLCD experiment requires the verified breakpoint and mapping')
-                        # Inferred dimensions, not verified iBoot or hardware values.
-                        # This deliberately perturbs only the diagnostic guest.
-                        gdb_command(f'M{address + 0x50:x},4:01000000')
-                        gdb_command(f'M{address + 0x60:x},4:8002c003')
-                        observed = qmp('human-monitor-command', {'command-line': f'x /8wx 0x{address + 0x50:x}'})
-                        (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
-                            'diagnostic_only': True, 'register_base': hex(address),
-                            'physical_base': '0x39200000', 'assumed_values': {'0x50': '0x1',
-                            '0x60': '0x03c00280'}, 'observed': observed}, indent=2))
-                        if not re.search(r'0x00000001\b', observed) or not re.search(r'0x03c00280\b', observed):
-                            raise RuntimeError('CLCD diagnostic writes did not read back')
-                        gdb_command(f'z0,{int(breakpoint_address, 0):x},2')
-                        qmp('cont')
-                        continue
                     follow = os.environ.get('N94_FOLLOW_BREAKPOINT')
                     if follow:
                         gdb_command(f'z0,{int(breakpoint_address, 0):x},2')
