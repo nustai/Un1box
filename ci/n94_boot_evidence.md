@@ -376,6 +376,10 @@ the clear poll and next touches 0x3f200010. This is not hardware validation.
 The QEMU PMGR model now includes inferred shared bits at +0x1200/+0x1204,
 with a QTest for set, clear, independent bits and reset; actual bit meanings,
 reset state, IOP CPU and mailbox remain unverified.
+Host run 41858128457 passed the PMGR set/clear and reset checks. Diagnostic
+stock-kernel run 41871697495 reached restore launchd for both boot-args
+candidates with the inferred PMGR behavior; its screen still contains only
+the small white rectangle. This does not establish functioning IOP or NAND.
 In the isolated Unicorn harness, adding plain diagnostic backing for AIC
 0x3f200000 lets firmware access its registers, but execution reaches an
 explicit self-loop at image PC 0xae8c after a call from 0xb340. This run also
