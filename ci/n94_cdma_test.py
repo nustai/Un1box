@@ -168,6 +168,11 @@ def execute(binary, directory):
                 writel(0x38400260, 0x87654321)
                 assert readl(0x38300260) == 0x12345678
                 assert readl(0x38400260) == 0x87654321
+                # The stock IOP polls set and clear aliases for bit 0x40.
+                writel(0x3f101200, 0xc0)
+                assert readl(0x3f101200) == 0xc0
+                writel(0x3f101204, 0x40)
+                assert readl(0x3f101204) == 0x80
                 qmp('system_reset')
                 assert readl(CHANNEL) == 0x20000
                 assert readl(CHANNEL + 0xc) == 0
@@ -181,6 +186,7 @@ def execute(binary, directory):
                 assert readl(0x38b00010) == 0
                 assert readl(0x38300260) == 0
                 assert readl(0x38400260) == 0
+                assert readl(0x3f101200) == 0
                 assert not levels.get(0)
                 print('PASS CDMA unsupported crypto rejected and reset clears channel/masks/IRQ/crypto', flush=True)
                 monitor_stream.write(b'{"execute":"quit"}\n')

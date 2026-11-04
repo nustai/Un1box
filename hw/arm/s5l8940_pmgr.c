@@ -32,6 +32,7 @@ struct S5L8940PMGRState {
     uint32_t power_gates[128];
     uint32_t wdt_ctrl;
     uint32_t wdt_count;
+    uint32_t iop_gate_state;
 
     uint32_t storage[S5L8940_PMGR_WORDS];
 };
@@ -47,6 +48,11 @@ static uint64_t s5l8940_pmgr_read(void *opaque, hwaddr offset, unsigned size)
     }
 
     switch (offset) {
+    case 0x1200:
+    case 0x1204:
+        /* Diagnostic shared-state interpretation of stock IOP gate polls.
+         * TODO(n94): verify reset state and all bits on physical hardware. */
+        return s->iop_gate_state;
     case 0x300:
         /* Stock n94 _initPMGRState reads +0x300 at 0x80d96230 and uses
          * its low nibble as the occupied PERF_STATE prefix. A blanket 0xf
@@ -95,6 +101,17 @@ static void s5l8940_pmgr_write(void *opaque, hwaddr offset, uint64_t value, unsi
          * TODO(n94): power-domain dependencies and transition latency.
          */
         s->storage[word_idx] = (value & ~0xf0U) | ((value & 0xf) << 4);
+        return;
+    }
+    /* Stock n94 IOP at image +0xae98 writes 0x40 to +0x1204 and polls
+     * until clear; the companion at +0xaec4 writes to +0x1200 and polls
+     * until set. Shared write-one set/clear state is inferred, not verified. */
+    if (offset == 0x1200) {
+        s->iop_gate_state |= (uint32_t)value;
+        return;
+    }
+    if (offset == 0x1204) {
+        s->iop_gate_state &= ~(uint32_t)value;
         return;
     }
     s->storage[word_idx] = (uint32_t)value;
@@ -158,11 +175,23 @@ static void s5l8940_pmgr_init(Object *obj)
     sysbus_init_mmio(dev, &s->iomem);
 }
 
+static void s5l8940_pmgr_reset(DeviceState *dev)
+{
+    /* TODO(n94): verify reset state for the remaining PMGR registers. */
+    S5L8940_PMGR(dev)->iop_gate_state = 0;
+}
+
+static void s5l8940_pmgr_class_init(ObjectClass *klass, const void *data)
+{
+    device_class_set_legacy_reset(DEVICE_CLASS(klass), s5l8940_pmgr_reset);
+}
+
 static const TypeInfo s5l8940_pmgr_info = {
     .name          = TYPE_S5L8940_PMGR,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(S5L8940PMGRState),
     .instance_init = s5l8940_pmgr_init,
+    .class_init = s5l8940_pmgr_class_init,
 };
 
 static void s5l8940_pmgr_register_types(void)

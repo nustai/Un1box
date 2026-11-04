@@ -367,6 +367,15 @@ In that run the pointer was read from image address 0x1334c, where the
 original image already contains 0xffffffff; no write to that word was
 observed before the fault. The host boot contract and expected initial
 registers and memory layout have not been established.
+With an explicitly fabricated page-table pointer and 16 KiB of extra memory,
+the isolated IOP reaches image PC 0xae98, writes bit 0x40 to 0x3f101204,
+and waits for that bit to clear. The companion routine at 0xaec4 writes bit
+0x40 to 0x3f101200 and waits for it to become set. In a further diagnostic
+hypothesis implementing shared write-one set/clear bits, the firmware passes
+the clear poll and next touches 0x3f200010. This is not hardware validation.
+The QEMU PMGR model now includes inferred shared bits at +0x1200/+0x1204,
+with a QTest for set, clear, independent bits and reset; actual bit meanings,
+reset state, IOP CPU and mailbox remain unverified.
 
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
