@@ -276,3 +276,17 @@ R1 base to 0x38000000, matching the n94 vxe node. The v3 breakpoint was not
 reached during the sampling window, so that run failed and does not confirm
 the v3 address. The opt-in no-vxe diagnostic omits hardware video encoding;
 it is disabled by default and does not emulate video encoding.
+
+With the no-vxe option, run 41697568682 passed the VXE fault but both
+candidates panicked in IMGSGX543 at 0x80df0838 on a register access at
+R0+0x4010. GPU functionality is unimplemented; the physical mapping is
+being measured separately. The scaler reported hardware version zero and
+could not find matching extents, so diagnostic register retention did not
+establish a working scaler.
+
+Breakpoint run 41698103024 translated the SGX base to 0x35100000 in both
+candidates. An optional CLCD handoff experiment stops at 0x80d4cb40, verifies
+the physical mapping, and attempts writes of inferred 640x960 fields and
+an enable bit. These values are a test hypothesis, not verified iBoot state;
+the run records and checks readback before continuing. Even a positive result
+would not implement the display controller, scaler, GPU, storage, or touch.

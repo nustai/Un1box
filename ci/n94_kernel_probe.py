@@ -129,6 +129,23 @@ def probe(binary, bundle, output, seconds):
                          'r1_virtual_address': hex(r1_address), 'r1_mapping': r1_mapping,
                          'object_words': object_words, 'initial_frame': frame_before}, indent=2))
                     breakpoint_hit = True
+                    if os.environ.get('N94_DIAGNOSTIC_CLCD_HANDOFF') == 'true':
+                        if int(breakpoint_address, 0) != 0x80d4cb40 or 'gpa: 0x39200000' not in mapping:
+                            raise RuntimeError('CLCD experiment requires the verified breakpoint and mapping')
+                        # Inferred dimensions, not verified iBoot or hardware values.
+                        # This deliberately perturbs only the diagnostic guest.
+                        gdb_command(f'M{address + 0x50:x},4:01000000')
+                        gdb_command(f'M{address + 0x60:x},4:8002c003')
+                        observed = qmp('human-monitor-command', {'command-line': f'x /8wx 0x{address + 0x50:x}'})
+                        (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
+                            'diagnostic_only': True, 'register_base': hex(address),
+                            'physical_base': '0x39200000', 'assumed_values': {'0x50': '0x1',
+                            '0x60': '0x03c00280'}, 'observed': observed}, indent=2))
+                        if not re.search(r'0x00000001\b', observed) or not re.search(r'0x03c00280\b', observed):
+                            raise RuntimeError('CLCD diagnostic writes did not read back')
+                        gdb_command(f'z0,{int(breakpoint_address, 0):x},2')
+                        qmp('cont')
+                        continue
                     follow = os.environ.get('N94_FOLLOW_BREAKPOINT')
                     if follow:
                         gdb_command(f'z0,{int(breakpoint_address, 0):x},2')

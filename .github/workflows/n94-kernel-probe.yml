@@ -34,6 +34,10 @@ on:
         description: Diagnostic only - omit the hardware video encoder
         type: boolean
         default: false
+      diagnostic_clcd_handoff:
+        description: Diagnostic only - experiment with inferred CLCD handoff registers
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -86,6 +90,7 @@ jobs:
         env:
           N94_BREAKPOINT: ${{ inputs.breakpoint }}
           N94_FOLLOW_BREAKPOINT: ${{ inputs.follow_breakpoint }}
+          N94_DIAGNOSTIC_CLCD_HANDOFF: ${{ inputs.diagnostic_clcd_handoff }}
         run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 120
       - name: Verify observed restore userspace
         if: inputs.diagnostic_no_secure_root && inputs.restore_ramdisk && inputs.breakpoint == ''
