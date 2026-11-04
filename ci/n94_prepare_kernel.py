@@ -220,7 +220,7 @@ def diagnostic_secure_root(dt, ramdisk, enabled):
 
 def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             diagnostic_no_secure_root=False, diagnostic_single_cpu=False,
-            diagnostic_no_tv_out=False, diagnostic_no_vxe=False):
+            diagnostic_no_tv_out=False, diagnostic_no_vxe=False, diagnostic_no_sgx=False):
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -236,6 +236,10 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if diagnostic_no_vxe:
         # Diagnostic isolation: encoding is not needed to display SpringBoard.
         dt.at('arm-io').children.remove(dt.at('arm-io/vxe'))
+    if diagnostic_no_sgx:
+        # Isolate the absent GPU while tracing other startup paths. This is
+        # not a GPU fallback and makes no claim that SpringBoard can run.
+        dt.at('arm-io').children.remove(dt.at('arm-io/sgx'))
     dt.at("memory").set("reg", u32(RAM, RAM_SIZE))
     chosen = dt.at("chosen")
     proxy = chosen.props.get('nvram-proxy-data', (b'', 0))[0]
@@ -315,6 +319,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
               "diagnostic_single_cpu": diagnostic_single_cpu,
               "diagnostic_no_tv_out": diagnostic_no_tv_out,
               "diagnostic_no_vxe": diagnostic_no_vxe,
+              "diagnostic_no_sgx": diagnostic_no_sgx,
               "firmware_property_flags_cleared": cleared_flags,
               "diagnostic_pram": {"address": hex(pram_pa), "size": pram_size},
               "diagnostic_nvram": {"mode": "volatile-empty-CHRP", "bytes": 8192},
@@ -342,6 +347,8 @@ def main():
                         help="diagnostic only: omit the external TV-out node")
     parser.add_argument("--diagnostic-no-vxe", action="store_true",
                         help="diagnostic only: omit the hardware video encoder")
+    parser.add_argument("--diagnostic-no-sgx", action="store_true",
+                        help="diagnostic only: omit the GPU; no graphics fallback implied")
     parser.add_argument("--output", required=True, type=pathlib.Path)
     options = parser.parse_args()
     ramdisk = options.ramdisk.read_bytes() if options.ramdisk else None
@@ -373,7 +380,7 @@ def main():
     for version in (2, 3):
         prepare(kernel, dt, version, options.output, ramdisk, entropy,
                 options.diagnostic_no_secure_root, options.diagnostic_single_cpu,
-                options.diagnostic_no_tv_out, options.diagnostic_no_vxe)
+                options.diagnostic_no_tv_out, options.diagnostic_no_vxe, options.diagnostic_no_sgx)
 
 
 if __name__ == "__main__":

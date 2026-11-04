@@ -290,3 +290,11 @@ the physical mapping, and attempts writes of inferred 640x960 fields and
 an enable bit. These values are a test hypothesis, not verified iBoot state;
 the run records and checks readback before continuing. Even a positive result
 would not implement the display controller, scaler, GPU, storage, or touch.
+
+Run 41793123047 verified the two experimental writes by reading them back.
+Both boot-args candidates then printed AppleMobileCLCD DisplayPipe start at
+0x3a100000 instead of the earlier CLCD-not-initialized message, and both
+later panicked at the unimplemented SGX access. A green status here means
+trace collection and does not mean a usable display or iOS boot. An additional
+opt-in no-SGX DT experiment isolates subsequent startup; it does not provide
+software rendering or indicate that SpringBoard can run without the GPU.
