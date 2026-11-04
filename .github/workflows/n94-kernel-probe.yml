@@ -75,6 +75,7 @@ jobs:
           python3 ci/n94_prepare_test.py
           python3 ci/n94_touch_firmware_test.py
           python3 ci/n94_touch_z2_test.py
+          python3 ci/n94_iop_firmware_test.py
           flags=()
           if [ "$RESTORE_RAMDISK" = true ]; then flags+=(--restore-ramdisk); fi
           if [ "$DIAGNOSTIC_NO_SECURE_ROOT" = true ]; then flags+=(--diagnostic-no-secure-root); fi

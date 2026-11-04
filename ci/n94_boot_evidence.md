@@ -345,6 +345,15 @@ existing file. Its resource parser limits each expanded chunk and rejects
 invalid bounds; two unit tests cover the observed multi-chunk layout and
 malformed/oversized inputs. It emits hashes and metadata, never firmware bytes.
 
+The stock 13G37 kernel prelink contains `IOP_s5l8940xiop_firmware` with a
+143,360-byte `fwFirmwareImage` section at virtual 0x80e7b000. Its first
+instruction is ARM reset-vector branch 0xea00000e, followed by exception
+vectors; the code at +0x40 sets banked ARM CPU modes. This identifies the
+embedded firmware, not its execution: IOP CPU, mailbox, NAND and FTL are not
+implemented. `ci/n94_iop_firmware.py` locates and validates the section from
+a local decrypted kernel, prints only metadata and optionally exports to a
+new local file. It was checked against the actual n94 kernelcache.
+
 Run 41794706279, with explicit CLCD handoff and devices omitted, passed the
 JPEG fault but both candidates panicked in AppleM2ScalerCSCDriver at the
 same instruction as scaler0. The captured post-fault translations map the
