@@ -55,7 +55,23 @@ struct N94DisplayState {
     uint32_t storage[N94_CLCD_WORDS];
     uint32_t storage_sub1[N94_CLCD_SUB1_WORDS];
     uint32_t storage_sub2[N94_CLCD_SUB2_WORDS];
+    uint8_t seen_main[N94_CLCD_WORDS];
+    uint8_t seen_sub1[N94_CLCD_SUB1_WORDS];
+    uint8_t seen_sub2[N94_CLCD_SUB2_WORDS];
 };
+
+/* Log the first read and write of each register without flooding the trace. */
+static void n94_display_trace(uint8_t *seen, hwaddr offset, bool write, uint32_t value,
+                              const char *region)
+{
+    uint8_t bit = write ? 2 : 1;
+    uint8_t *entry = &seen[offset / 4];
+    if (!(*entry & bit)) {
+        *entry |= bit;
+        qemu_log_mask(LOG_UNIMP, "n94 CLCD %s first %s +0x%" HWADDR_PRIx " = 0x%08x\n",
+                      region, write ? "write" : "read", offset, value);
+    }
+}
 
 static void n94_display_update(void *opaque)
 {
@@ -124,6 +140,7 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
         break;
     }
 
+    n94_display_trace(s->seen_main, offset, false, val, "main");
     return val;
 }
 
@@ -131,6 +148,7 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_WORDS;
+    n94_display_trace(s->seen_main, offset, true, (uint32_t)value, "main");
     s->storage[word_idx] = (uint32_t)value;
 
     switch (offset) {
@@ -159,13 +177,16 @@ static uint64_t n94_display_sub1_read(void *opaque, hwaddr offset, unsigned size
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
-    return s->storage_sub1[word_idx];
+    uint32_t value = s->storage_sub1[word_idx];
+    n94_display_trace(s->seen_sub1, offset, false, value, "sub1");
+    return value;
 }
 
 static void n94_display_sub1_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
+    n94_display_trace(s->seen_sub1, offset, true, (uint32_t)value, "sub1");
     s->storage_sub1[word_idx] = (uint32_t)value;
 }
 
@@ -174,13 +195,16 @@ static uint64_t n94_display_sub2_read(void *opaque, hwaddr offset, unsigned size
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB2_WORDS;
-    return s->storage_sub2[word_idx];
+    uint32_t value = s->storage_sub2[word_idx];
+    n94_display_trace(s->seen_sub2, offset, false, value, "sub2");
+    return value;
 }
 
 static void n94_display_sub2_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB2_WORDS;
+    n94_display_trace(s->seen_sub2, offset, true, (uint32_t)value, "sub2");
     s->storage_sub2[word_idx] = (uint32_t)value;
 }
 
