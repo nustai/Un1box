@@ -328,6 +328,10 @@ establish SPI, bootloader packet or input-event emulation.
 The profile identifies `PreconstructedBootloadPacketType` as `Z2` and
 `Constructed Firmware Version` as `0x0098.bin`; this is metadata from the
 stock volume, not a successful firmware upload or touch-controller emulation.
+The stock kernel's n94 IOKit personality selects `AppleMultitouchN1SPI`,
+provider `AppleARMSPIDevice`, and `mt-merge-personality` `N1F56,1`. This
+links the kernel driver personality to the identified firmware profile;
+its SPI transactions, firmware protocol and input events remain unimplemented.
 `ci/n94_touch_firmware.py` now reproducibly reads and validates this plist
 from a local HFS volume, optionally saving it locally without overwriting an
 existing file. Its resource parser limits each expanded chunk and rejects
