@@ -14,6 +14,7 @@ on:
         description: Optional guest instruction address for MMU translation capture
         required: false
         type: string
+        default: ''
       diagnostic_no_secure_root:
         description: Diagnostic only - remove stock md secure-root policy (insecure)
         type: boolean
