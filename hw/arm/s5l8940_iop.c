@@ -448,7 +448,7 @@ static void s5l8940_iop_init(Object *obj)
     s->doorbell_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, s5l8940_iop_doorbell_timer_cb, s);
 }
 
-static Property s5l8940_iop_properties[] = {
+static const Property s5l8940_iop_properties[] = {
     DEFINE_PROP_UINT32("nand-id", S5L8940IOPState, nand_id, FMI_DEFAULT_NAND_ID),
     DEFINE_PROP_STRING("nand", S5L8940IOPState, nand_path),
     DEFINE_PROP_STRING("nand-overlay", S5L8940IOPState, nand_overlay_path),
