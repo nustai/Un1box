@@ -150,6 +150,7 @@ static void n94_load_kboot(N94MachineState *s)
     g_free(image);
     s->kernel_entry = entry;
     s->bootargs_pa = args;
+    s->soc.bootargs_pa = args;
 }
 
 /* Mach-O 32-bit loader for iOS xnu kernelcache */
@@ -279,6 +280,9 @@ static void n94_reset(void *opaque)
     env->cp15.vbar_el[1] = S5L8940_RAM_BASE;
 
     /* Prepare secondary CPU1 registers for SMP wakeup */
+    s->soc.bootargs_pa = s->bootargs_pa;
+
+    /* Prepare secondary CPU1 registers for SMP wakeup */
     ARMCPU *cpu1 = &s->soc.cpu[1];
     CPUARMState *env1 = &cpu1->env;
     env1->regs[0] = s->bootargs_pa;
@@ -373,6 +377,7 @@ static void n94_init(MachineState *machine)
 
         cpu_physical_memory_write(N94_BOOTARGS_PA, &ba, sizeof(ba));
         s->bootargs_pa = N94_BOOTARGS_PA;
+        s->soc.bootargs_pa = N94_BOOTARGS_PA;
         s->boot_fb = N94_FB_BASE;
     }
 

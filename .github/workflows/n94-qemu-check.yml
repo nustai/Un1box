@@ -61,6 +61,7 @@ jobs:
             's5l8940_scaler.c',
             's5l8940_mipi.c',
             's5l8940_dart.c',
+            's5l8940_fmi.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"

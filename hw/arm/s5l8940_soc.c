@@ -50,10 +50,20 @@ static void s5l8940_soc_release_cpu1(void *opaque, int n, int level)
         if (cs1->halted) {
             ARMCPU *cpu1 = &s->cpu[1];
             CPUARMState *env1 = &cpu1->env;
-            env1->regs[0] = 0x80005000; /* N94_BOOTARGS_PA */
-            env1->regs[1] = 0x803fe000; /* CPU1 cpu_data_t physical address */
-            env1->regs[13] = 0x80200000; /* Secondary initial stack */
-            env1->regs[15] = 0x800c7000; /* Secondary core startup vector in start.s */
+            if (s->bootargs_pa) {
+                env1->regs[0] = s->bootargs_pa;
+            } else if (!env1->regs[0]) {
+                env1->regs[0] = 0x80005000;
+            }
+            if (!env1->regs[1]) {
+                env1->regs[1] = 0x803fe000; /* Apple A5 CPU1 cpu_data_t physical address */
+            }
+            if (!env1->regs[13]) {
+                env1->regs[13] = 0x80200000; /* Secondary initial stack */
+            }
+            if (!env1->regs[15]) {
+                env1->regs[15] = 0x800c7000; /* Secondary core startup vector in start.s */
+            }
             cpsr_write(env1, 0x000000D3, 0xffffffff, CPSRWriteRaw);
             env1->cp15.vbar_el[1] = 0x80000000;
             cs1->halted = 0;
@@ -101,13 +111,53 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
     /* Connect PMGR CPU1 release output to SoC secondary core wake line */
     sysbus_connect_irq(SYS_BUS_DEVICE(s->pmgr), 0, qdev_get_gpio_in(dev, 0));
-    /* n94 usb-complex reg 0x0f108000, translated through arm-io ranges. */
+
+    /* 3. USB Subsystem: control, OTG PHY, device controller, and EHCI/OHCI hosts */
     DeviceState *usb_control = qdev_new("n94-usb-control");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_control), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(usb_control), 0, 0x3f108000);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_control), 0, S5L8940_USB_COMPLEX_BASE);
+
+    DeviceState *otgphy = qdev_new("n94-otgphyctrl");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(otgphy), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(otgphy), 0, S5L8940_OTGPHYCTRL_BASE);
+
+    DeviceState *usb_device = qdev_new("n94-usb-device");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_device), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_device), 0, S5L8940_USB_DEV_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(usb_device), 0, qdev_get_gpio_in(s->aic, 0x0b));
+
+    DeviceState *usb_ehci = qdev_new("n94-usb-host");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_ehci), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_ehci), 0, S5L8940_USB_EHCI_BASE0);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_ehci), 1, S5L8940_USB_EHCI_BASE1);
+    sysbus_connect_irq(SYS_BUS_DEVICE(usb_ehci), 0, qdev_get_gpio_in(s->aic, 0x0c));
+
+    DeviceState *usb_ohci0 = qdev_new("n94-usb-host");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_ohci0), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_ohci0), 0, S5L8940_USB_OHCI0_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(usb_ohci0), 0, qdev_get_gpio_in(s->aic, 0x0d));
+
+    DeviceState *usb_ohci1 = qdev_new("n94-usb-host");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_ohci1), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(usb_ohci1), 0, S5L8940_USB_OHCI1_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(usb_ohci1), 0, qdev_get_gpio_in(s->aic, 0x0e));
+
+    /* 4. Flash Memory Interface (FMI) controller: 6 MMIO banks */
+    DeviceState *fmi = qdev_new("n94-fmi");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(fmi), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 0, S5L8940_FMI_BASE_0);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 1, S5L8940_FMI_BASE_1);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 2, S5L8940_FMI_BASE_2);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 3, S5L8940_FMI_BASE_3);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 4, S5L8940_FMI_BASE_4);
+    sysbus_mmio_map(SYS_BUS_DEVICE(fmi), 5, S5L8940_FMI_BASE_5);
+    sysbus_connect_irq(SYS_BUS_DEVICE(fmi), 0, qdev_get_gpio_in(s->aic, 0x21));
+    sysbus_connect_irq(SYS_BUS_DEVICE(fmi), 1, qdev_get_gpio_in(s->aic, 0x22));
+
     DeviceState *sgx_control = qdev_new("n94-sgx-control");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(sgx_control), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(sgx_control), 0, 0x3f10b000);
+
     /* n94 DeviceTree dwi reg 0x0f700000 under arm-io. */
     DeviceState *dwi = qdev_new("n94-dwi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dwi), &error_fatal);
@@ -117,14 +167,17 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *scaler = qdev_new("n94-scaler");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(scaler), 0, 0x38300000);
+
     /* The n94 DT exposes a second independent scaler at 0x38400000. */
     DeviceState *scaler1 = qdev_new("n94-scaler");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler1), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(scaler1), 0, 0x38400000);
+
     DeviceState *mipi = qdev_new("n94-mipi");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 1, 0x3f110000);
+
     /* Both n94 DT DART resources; mapping behavior is not implemented. */
     DeviceState *dart_rt = qdev_new("n94-dart-diagnostic");
     DeviceState *dart_nrt = qdev_new("n94-dart-diagnostic");
@@ -132,14 +185,18 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(dart_rt), 0, 0x3a400000);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dart_nrt), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dart_nrt), 0, 0x38b00000);
+
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
+
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(i2s_switch), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(i2s_switch), 0, 0x3fa01000);
+
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pl310), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 0, S5L8940_PL310_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pl310), 1, S5L8940_CIF_BASE);
+
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->cdma), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->cdma), 0, S5L8940_CDMA_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->cdma), 1, S5L8940_CDMA_CRYPTO_BASE);
@@ -148,7 +205,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
                            qdev_get_gpio_in(s->aic, 0x33 + i));
     }
 
-    /* 3. Realize the boot console (UART0) and the separate UART1. */
+    /* 5. Realize the boot console (UART0) and the separate UART1. */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->uart0), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->uart0), 0, S5L8940_UART0_BASE);
     sysbus_connect_irq(SYS_BUS_DEVICE(s->uart0), 0, qdev_get_gpio_in(s->aic, 0x15));
@@ -157,7 +214,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* DeviceTree specifies interrupt 0x16 for UART1 */
     sysbus_connect_irq(SYS_BUS_DEVICE(s->uart1), 0, qdev_get_gpio_in(s->aic, 0x16));
 
-    /* 4. Realize and map Display (640x960 Retina) and subregions */
+    /* 6. Realize and map Display (640x960 Retina) and subregions */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->clcd), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->clcd), 0, S5L8940_CLCD_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->clcd), 1, S5L8940_CLCD_SUB_BASE_1);
@@ -170,7 +227,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(SYS_BUS_DEVICE(s->clcd), 0, qdev_get_gpio_in(s->aic, 0x2b));
     sysbus_connect_irq(SYS_BUS_DEVICE(s->clcd), 1, qdev_get_gpio_in(s->aic, 0x2a));
 
-    /* 5. Map IO regions (0x3fb00000 and 0x3fc00000) */
+    /* 7. Map IO regions (0x3fb00000 and 0x3fc00000) */
     memory_region_init_ram(&s->io_mem_0, OBJECT(s), "s5l8940.io0", S5L8940_IO_SIZE_0, &error_fatal);
     memory_region_add_subregion(sysmem, S5L8940_IO_BASE_0, &s->io_mem_0);
 
