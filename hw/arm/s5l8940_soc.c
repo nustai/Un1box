@@ -42,6 +42,26 @@ static void s5l8940_soc_init(Object *obj)
     s->clcd = qdev_new("n94-display");
 }
 
+static void s5l8940_soc_release_cpu1(void *opaque, int n, int level)
+{
+    S5L8940State *s = opaque;
+    if (level) {
+        CPUState *cs1 = CPU(&s->cpu[1]);
+        if (cs1->halted) {
+            ARMCPU *cpu1 = &s->cpu[1];
+            CPUARMState *env1 = &cpu1->env;
+            env1->regs[0] = 0x80005000; /* N94_BOOTARGS_PA */
+            env1->regs[1] = 0x803fe000; /* CPU1 cpu_data_t physical address */
+            env1->regs[13] = 0x80200000; /* Secondary initial stack */
+            env1->regs[15] = 0x800c7000; /* Secondary core startup vector in start.s */
+            cpsr_write(env1, 0x000000D3, 0xffffffff, CPSRWriteRaw);
+            env1->cp15.vbar_el[1] = 0x80000000;
+            cs1->halted = 0;
+            qemu_cpu_kick(cs1);
+        }
+    }
+}
+
 static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
 {
     S5L8940State *s = S5L8940_SOC(dev);
@@ -50,7 +70,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* Realize CPU cores (Cortex-A9 is ARMv7-A without EL3) */
     for (int i = 0; i < 2; i++) {
         object_property_set_bool(OBJECT(&s->cpu[i]), "reset-hivecs", true, &error_fatal);
-        /* TODO(n94): implement the S5L8940 secondary-core release protocol. */
+        object_property_set_int(OBJECT(&s->cpu[i]), "mp-affinity", i, &error_fatal);
         object_property_set_bool(OBJECT(&s->cpu[i]), "start-powered-off", i != 0, &error_fatal);
         if (!qdev_realize(DEVICE(&s->cpu[i]), NULL, errp)) {
             return;
@@ -58,6 +78,8 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
         s->cpu_irq[i] = qdev_get_gpio_in(DEVICE(&s->cpu[i]), ARM_CPU_IRQ);
         s->cpu_fiq[i] = qdev_get_gpio_in(DEVICE(&s->cpu[i]), ARM_CPU_FIQ);
     }
+
+    qdev_init_gpio_in(dev, s5l8940_soc_release_cpu1, 1);
 
     /* 1. Realize and map AIC */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->aic), &error_fatal);
@@ -77,6 +99,8 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     /* 2. Realize and map PMGR */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->pmgr), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->pmgr), 0, S5L8940_PMGR_BASE);
+    /* Connect PMGR CPU1 release output to SoC secondary core wake line */
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->pmgr), 0, qdev_get_gpio_in(dev, 0));
     /* n94 usb-complex reg 0x0f108000, translated through arm-io ranges. */
     DeviceState *usb_control = qdev_new("n94-usb-control");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(usb_control), &error_fatal);

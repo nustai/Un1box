@@ -98,11 +98,13 @@ static void n94_vblank_tick(void *opaque)
 {
     N94DisplayState *s = opaque;
 
-    /* TODO(n94): replace diagnostic pulses with verified DPCIRQ status,
-     * masking, timing and AIC delivery. DT lists 0x2b then 0x2a; their
-     * respective event semantics are not yet established. */
-    qemu_irq_pulse(s->vblank_irq[0]);
-    qemu_irq_pulse(s->vblank_irq[1]);
+    /* S5L8940 CLCD DPCIRQ: Bit 1 (0x02) indicates VBLANK completion */
+    s->storage[0x102c / 4] |= 0x02;
+
+    /* If unmasked by interrupt mask register (+0x1028), raise level IRQ 0x2b (Line 0) */
+    if (s->storage[0x1028 / 4] & 0x02) {
+        qemu_irq_raise(s->vblank_irq[0]);
+    }
 
     /* Re-arm for 60 Hz (~16.6 ms) */
     timer_mod(s->vblank_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (NANOSECONDS_PER_SECOND / 60));
@@ -156,10 +158,22 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     uint32_t word_idx = (offset / 4) % N94_CLCD_WORDS;
     n94_display_trace(s->seen_main, offset, true, (uint32_t)value, "main");
     /* The stock driver reads DPCIRQ at +0x102c, accumulates its bits,
-     * then writes those bits back; initialization writes 0xffffffff.
-     * TODO(n94): verify W1C semantics and model the actual interrupt sources. */
+     * then writes those bits back to clear them (W1C).
+     * Level IRQ line 0 (0x2b) deasserts when all unmasked bits are cleared. */
     if (offset == 0x102c) {
         s->storage[word_idx] &= ~(uint32_t)value;
+        if (!(s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
+            qemu_irq_lower(s->vblank_irq[0]);
+        }
+        return;
+    }
+    if (offset == 0x1028) {
+        s->storage[word_idx] = (uint32_t)value;
+        if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
+            qemu_irq_raise(s->vblank_irq[0]);
+        } else {
+            qemu_irq_lower(s->vblank_irq[0]);
+        }
         return;
     }
     s->storage[word_idx] = (uint32_t)value;
@@ -302,6 +316,8 @@ static void n94_display_reset(DeviceState *dev)
     memset(s->seen_main, 0, sizeof(s->seen_main));
     memset(s->seen_sub1, 0, sizeof(s->seen_sub1));
     memset(s->seen_sub2, 0, sizeof(s->seen_sub2));
+    qemu_irq_lower(s->vblank_irq[0]);
+    qemu_irq_lower(s->vblank_irq[1]);
 }
 
 static void n94_display_class_init(ObjectClass *klass, const void *data)

@@ -277,6 +277,16 @@ static void n94_reset(void *opaque)
 
     /* 5. VBAR = 0x80000000 (Vector Base Address Register) */
     env->cp15.vbar_el[1] = S5L8940_RAM_BASE;
+
+    /* Prepare secondary CPU1 registers for SMP wakeup */
+    ARMCPU *cpu1 = &s->soc.cpu[1];
+    CPUARMState *env1 = &cpu1->env;
+    env1->regs[0] = s->bootargs_pa;
+    env1->regs[1] = 0x803fe000; /* Apple A5 CPU1 cpu_data_t physical address */
+    env1->regs[13] = S5L8940_RAM_BASE + 0x00200000;
+    env1->regs[15] = 0x800c7000; /* Apple _start secondary core entry */
+    cpsr_write(env1, 0x000000D3, 0xffffffff, CPSRWriteRaw);
+    env1->cp15.vbar_el[1] = S5L8940_RAM_BASE;
 }
 
 static void n94_init(MachineState *machine)
