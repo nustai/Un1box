@@ -419,18 +419,27 @@ static void s5l8940_iop_realize(DeviceState *dev, Error **errp)
 {
     S5L8940IOPState *s = S5L8940_IOP(dev);
 
-    /* Open backing raw NAND/HFS+ file if provided, with automatic fallbacks */
+    /* Open backing raw NAND/HFS+ file if provided and regular file */
     if (s->nand_path) {
-        s->raw_file = fopen(s->nand_path, "r+b");
-        if (!s->raw_file) {
-            s->raw_file = fopen(s->nand_path, "rb");
+        struct stat st;
+        if (stat(s->nand_path, &st) == 0 && S_ISREG(st.st_mode)) {
+            s->raw_file = fopen(s->nand_path, "r+b");
+            if (!s->raw_file) {
+                s->raw_file = fopen(s->nand_path, "rb");
+            }
         }
     }
     if (!s->raw_file) {
-        s->raw_file = fopen("n94-rootfs.raw", "rb");
+        struct stat st;
+        if (stat("n94-rootfs.raw", &st) == 0 && S_ISREG(st.st_mode)) {
+            s->raw_file = fopen("n94-rootfs.raw", "rb");
+        }
     }
     if (!s->raw_file) {
-        s->raw_file = fopen("n94-rootfs-out/n94-rootfs.raw", "rb");
+        struct stat st;
+        if (stat("n94-rootfs-out/n94-rootfs.raw", &st) == 0 && S_ISREG(st.st_mode)) {
+            s->raw_file = fopen("n94-rootfs-out/n94-rootfs.raw", "rb");
+        }
     }
 }
 

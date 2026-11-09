@@ -8,6 +8,7 @@
  */
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "qemu/log.h"
 
 #define TYPE_S5L8940_GPIO "s5l8940-gpio"
@@ -17,8 +18,23 @@ OBJECT_DECLARE_SIMPLE_TYPE(S5L8940GPIOState, S5L8940_GPIO)
 struct S5L8940GPIOState {
     SysBusDevice parent_obj;
     MemoryRegion iomem;
+    qemu_irq parent_irq;
     uint32_t ports[N94_GPIO_PORTS];
+    uint32_t levels;
 };
+
+static void s5l8940_gpio_set_irq(void *opaque, int line, int level)
+{
+    S5L8940GPIOState *s = opaque;
+    if (line >= 0 && line < 32) {
+        if (level) {
+            s->levels |= (1U << line);
+        } else {
+            s->levels &= ~(1U << line);
+        }
+        qemu_set_irq(s->parent_irq, s->levels != 0);
+    }
+}
 
 static uint64_t s5l8940_gpio_read(void *opaque, hwaddr offset, unsigned size)
 {
@@ -53,6 +69,8 @@ static void s5l8940_gpio_reset(DeviceState *dev)
 {
     S5L8940GPIOState *s = S5L8940_GPIO(dev);
     memset(s->ports, 0, sizeof(s->ports));
+    s->levels = 0;
+    qemu_set_irq(s->parent_irq, 0);
 }
 
 static void s5l8940_gpio_init(Object *obj)
@@ -61,6 +79,8 @@ static void s5l8940_gpio_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &s5l8940_gpio_ops, s,
                           "n94-gpio", 0x1000);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
+    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->parent_irq);
+    qdev_init_gpio_in(DEVICE(obj), s5l8940_gpio_set_irq, 32);
 }
 
 static void s5l8940_gpio_class_init(ObjectClass *klass, const void *data)

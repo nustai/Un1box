@@ -201,6 +201,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
 
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->gpio), 0, qdev_get_gpio_in(s->aic, 0x77));
 
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(i2s_switch), &error_fatal);
