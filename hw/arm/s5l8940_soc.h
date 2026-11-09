@@ -93,6 +93,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(S5L8940State, S5L8940_SOC)
 #define S5L8940_RAM_BASE           0x80000000
 #define S5L8940_RAM_SIZE           (512 * 1024 * 1024) /* 512 MB LPDDR2 */
 
+#define S5L8940_IOP_BASE           (S5L8940_ARM_IO_BASE + 0x0f300000U)
+#define S5L8940_IOP_SIZE           0x1000
+
+#define S5L8940_SPI1_BASE          (S5L8940_ARM_IO_BASE + 0x02100000U)
+#define S5L8940_SPI1_SIZE          0x1000
+
 /* Screen geometry: iPhone 4S strictly 640x960 Retina (326 ppi) */
 #define N94_SCREEN_WIDTH           640
 #define N94_SCREEN_HEIGHT          960
@@ -119,6 +125,8 @@ struct S5L8940State {
     DeviceState *uart0; /* DeviceTree boot-console */
     DeviceState *uart1; /* Debug console */
     DeviceState *clcd;  /* Display controller */
+    DeviceState *iop;   /* S5L8940 IOP storage controller */
+    DeviceState *spi1;  /* Multitouch SPI controller */
 
     /* Boot arguments and DTB buffer */
     uint32_t ram_size;

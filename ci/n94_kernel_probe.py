@@ -31,7 +31,12 @@ def probe(binary, bundle, output, seconds):
         log_flags = 'in_asm,guest_errors,unimp'
     else:
         log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
-    command = [str(binary), "-M", f"n94,kboot={bundle}", "-S", "-display", "none",
+    machine_opt = f"n94,kboot={bundle}"
+    for candidate_nand in ("n94-rootfs.raw", "n94-rootfs-out/n94-rootfs.raw"):
+        if pathlib.Path(candidate_nand).exists():
+            machine_opt += f",nand={pathlib.Path(candidate_nand).resolve()}"
+            break
+    command = [str(binary), "-M", machine_opt, "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
                "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", log_flags, "-D", str(log)]
     if breakpoint_address:

@@ -271,6 +271,21 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     # Reserve an emulator-owned crash-log buffer in guest RAM, not fake MMIO.
     pram_pa, pram_size = RAM + RAM_SIZE - (1 << 20), 1 << 20
     dt.at("pram").set("reg", u32(pram_pa, pram_size))
+    try:
+        disk = dt.at("arm-io/flash-controller0/disk")
+        disk.set("#ce", u32(1))
+        disk.set("ce-bitmap", u32(1))
+        disk.set("#page-bytes", u32(4096))
+        disk.set("#spare-bytes", u32(128))
+        disk.set("#block-pages", u32(128))
+        disk.set("#ce-blocks", u32(4096))
+        disk.set("logical-page-size", u32(4096))
+        disk.set("block-bits", u32(7))
+        disk.set("page-bits", u32(12))
+        disk.set("device-readid", b"\xad\xd5\x14\xb6\x44\x00\x00\x00")
+        disk.set("dbg-chipids", b"\xad\xd5\x14\xb6\x44" + b"\x00" * 251)
+    except (KeyError, ValueError, StopIteration):
+        pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
     if ramdisk is not None:
         if len(ramdisk) > 64 << 20 or ramdisk[1024:1026] not in (b"H+", b"HX"):
@@ -299,6 +314,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         command += b" cpus=1"
     if ramdisk is not None:
         command += b" rd=md0"
+    else:
+        command += b" rd=disk0"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)

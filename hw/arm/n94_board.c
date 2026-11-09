@@ -316,6 +316,13 @@ static void n94_init(MachineState *machine)
         qdev_prop_set_chr(s->soc.uart1, "chardev", serial_hd(1));
     }
 
+    if (s->nand_path) {
+        qdev_prop_set_string(s->soc.iop, "nand", s->nand_path);
+    }
+    if (s->nand_overlay_path) {
+        qdev_prop_set_string(s->soc.iop, "nand-overlay", s->nand_overlay_path);
+    }
+
     /* Realize SoC */
     sysbus_realize(SYS_BUS_DEVICE(&s->soc), &error_fatal);
 

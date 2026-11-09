@@ -90,6 +90,9 @@ jobs:
             esac
           done
           python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw "${flags[@]}" --output n94-images
+          if [ "$RESTORE_RAMDISK" != true ]; then
+            python3 ci/n94_rootfs.py n94-input.ipsw n94-rootfs-out --raw-volume n94-rootfs.raw
+          fi
       - name: Capture actual guest execution
         timeout-minutes: 6
         env:

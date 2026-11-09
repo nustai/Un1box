@@ -35,7 +35,7 @@ jobs:
         run: |
           cp -v hw/arm/n94_*.c qemu_src/hw/arm/
           cp -v hw/arm/s5l8940_*.c qemu_src/hw/arm/
-          cp -v hw/arm/s5l8940_soc.h qemu_src/hw/arm/
+          cp -v hw/arm/s5l8940_*.h qemu_src/hw/arm/
 
       - name: Register n94 in qemu_src/hw/arm/meson.build
         run: |
@@ -62,6 +62,8 @@ jobs:
             's5l8940_mipi.c',
             's5l8940_dart.c',
             's5l8940_fmi.c',
+            's5l8940_iop.c',
+            's5l8940_spi.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"

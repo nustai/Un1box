@@ -78,7 +78,7 @@ static void n94_display_update(void *opaque)
     N94DisplayState *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
 
-    uint32_t fb = s->guest_configured ? (s->enabled ? s->fb_base : 0) : s->boot_fb_base;
+    uint32_t fb = (s->fb_base != 0) ? s->fb_base : s->boot_fb_base;
     if (!fb) {
         return;
     }

@@ -16,6 +16,8 @@
 #include "system/system.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/s5l8940_soc.h"
+#include "hw/arm/s5l8940_iop.h"
+#include "hw/arm/s5l8940_spi.h"
 #include "target/arm/cpu.h"
 
 static void s5l8940_soc_init(Object *obj)
@@ -40,6 +42,12 @@ static void s5l8940_soc_init(Object *obj)
     s->uart1 = qdev_new("n94-uart");
     /* Display CLCD (640x960 Retina) */
     s->clcd = qdev_new("n94-display");
+    /* IOP Storage Controller */
+    s->iop = qdev_new("s5l8940-iop");
+    object_property_add_child(obj, "iop", OBJECT(s->iop));
+    /* SPI1 Multitouch Controller */
+    s->spi1 = qdev_new("s5l8940-spi");
+    object_property_add_child(obj, "spi1", OBJECT(s->spi1));
 }
 
 static void s5l8940_soc_release_cpu1(void *opaque, int n, int level)
@@ -238,6 +246,17 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
 
     memory_region_init_ram(&s->io_mem_1, OBJECT(s), "s5l8940.io1", S5L8940_IO_SIZE_1, &error_fatal);
     memory_region_add_subregion(sysmem, S5L8940_IO_BASE_1, &s->io_mem_1);
+
+    /* 8. S5L8940 IOP Storage Controller */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->iop), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->iop), 0, S5L8940_IOP_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->iop), 0, qdev_get_gpio_in(s->aic, 0x02));
+
+    /* 9. S5L8940 SPI1 Multitouch Controller */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(s->spi1), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->spi1), 0, S5L8940_SPI1_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->spi1), 0, qdev_get_gpio_in(s->aic, 0x1d));
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->spi1), 1, qdev_get_gpio_in(s->gpio, 21));
 }
 
 static void s5l8940_soc_class_init(ObjectClass *klass, const void *data)
