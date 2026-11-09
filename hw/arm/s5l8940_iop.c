@@ -194,6 +194,7 @@ static void s5l8940_iop_process_rings(S5L8940IOPState *s)
             if ((w0 & ~3U) && !(w0 & 1U)) {
                 hwaddr item = w0 & ~3U;
                 uint32_t opcode = iop_ldl(item);
+                (void)opcode;
                 /* 'nop ' (0x6e6f7020) or 'nop_' (0x6e6f705f) ping */
                 iop_stl(item + 4, 0); /* status = 0 (kIOReturnSuccess) */
                 /* Return ownership to AP (bit 0 = 1) */
@@ -451,7 +452,6 @@ static Property s5l8940_iop_properties[] = {
     DEFINE_PROP_UINT32("nand-id", S5L8940IOPState, nand_id, FMI_DEFAULT_NAND_ID),
     DEFINE_PROP_STRING("nand", S5L8940IOPState, nand_path),
     DEFINE_PROP_STRING("nand-overlay", S5L8940IOPState, nand_overlay_path),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void s5l8940_iop_class_init(ObjectClass *klass, const void *data)
