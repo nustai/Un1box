@@ -12,6 +12,7 @@
 #include "hw/core/irq.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
+#include "exec/cpu-common.h"
 
 #define TYPE_S5L8940_PMGR "s5l8940-pmgr"
 OBJECT_DECLARE_SIMPLE_TYPE(S5L8940PMGRState, S5L8940_PMGR)
@@ -44,8 +45,15 @@ static void s5l8940_pmgr_cpu1_timer_cb(void *opaque)
 {
     S5L8940PMGRState *s = opaque;
     if (!s->cpu1_released) {
-        s->cpu1_released = true;
-        qemu_set_irq(s->cpu1_release_irq, 1);
+        uint32_t active_thread = 0;
+        cpu_physical_memory_read(0x803fe020, &active_thread, sizeof(active_thread));
+        if (active_thread != 0) {
+            s->cpu1_released = true;
+            qemu_set_irq(s->cpu1_release_irq, 1);
+        } else {
+            /* Reschedule check in 50ms */
+            timer_mod(s->cpu1_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (NANOSECONDS_PER_SECOND / 20));
+        }
     }
 }
 
@@ -115,8 +123,12 @@ static void s5l8940_pmgr_write(void *opaque, hwaddr offset, uint64_t value, unsi
         s->storage[word_idx] = (value & ~0xf0U) | ((value & 0xf) << 4);
         /* CPU1 device clock is at offset 0x1000 + 122*4 = 0x11e8 */
         if (offset == 0x11e8 && !s->cpu1_released) {
-            s->cpu1_released = true;
-            qemu_set_irq(s->cpu1_release_irq, 1);
+            uint32_t active_thread = 0;
+            cpu_physical_memory_read(0x803fe020, &active_thread, sizeof(active_thread));
+            if (active_thread != 0) {
+                s->cpu1_released = true;
+                qemu_set_irq(s->cpu1_release_irq, 1);
+            }
         }
         return;
     }
@@ -154,8 +166,12 @@ static void s5l8940_pmgr_write(void *opaque, hwaddr offset, uint64_t value, unsi
         s->power_gates[idx] = (uint32_t)value | 0x0f;
         /* CPU1 power gate is at offset 0x5000 + 122*4 = 0x51e8 */
         if (offset == 0x51e8 && !s->cpu1_released) {
-            s->cpu1_released = true;
-            qemu_set_irq(s->cpu1_release_irq, 1);
+            uint32_t active_thread = 0;
+            cpu_physical_memory_read(0x803fe020, &active_thread, sizeof(active_thread));
+            if (active_thread != 0) {
+                s->cpu1_released = true;
+                qemu_set_irq(s->cpu1_release_irq, 1);
+            }
         }
         break;
     }

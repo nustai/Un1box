@@ -48,6 +48,11 @@ static void s5l8940_soc_release_cpu1(void *opaque, int n, int level)
     if (level) {
         CPUState *cs1 = CPU(&s->cpu[1]);
         if (cs1->halted) {
+            uint32_t active_thread = 0;
+            cpu_physical_memory_read(0x803fe020, &active_thread, sizeof(active_thread));
+            if (!active_thread) {
+                return;
+            }
             ARMCPU *cpu1 = &s->cpu[1];
             CPUARMState *env1 = &cpu1->env;
             if (s->bootargs_pa) {
