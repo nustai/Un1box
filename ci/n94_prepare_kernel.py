@@ -296,11 +296,11 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
     # IOFlashStorageDevice::start: invoke this->registerService(0) directly
-    # Target: 0x80862520 in IOFlashStorage
+    # Target: 0x80862520 in IOFlashStorage (vtable offset 0x190 is IOService::registerService)
     fdevice_target = bytes.fromhex('012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('204600212368d3f8683198470120f8bd')
+        fdevice_repl = bytes.fromhex('204600212368d3f8903198470120f8bd')
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
