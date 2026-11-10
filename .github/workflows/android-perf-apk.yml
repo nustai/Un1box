@@ -670,7 +670,7 @@ jobs:
           git -C qemu-ios apply "$GITHUB_WORKSPACE"/ci/engine-patches/*.patch
           cp -v hw/arm/n94_*.c qemu-ios/hw/arm/
           cp -v hw/arm/s5l8940_*.c qemu-ios/hw/arm/
-          cp -v hw/arm/s5l8940_soc.h qemu-ios/hw/arm/
+          cp -v hw/arm/s5l8940_*.h qemu-ios/hw/arm/
           python3 - << 'PY'
           with open('qemu-ios/hw/arm/meson.build', 'r') as f:
               content = f.read()
@@ -693,6 +693,9 @@ jobs:
             's5l8940_scaler.c',
             's5l8940_mipi.c',
             's5l8940_dart.c',
+            's5l8940_fmi.c',
+            's5l8940_iop.c',
+            's5l8940_spi.c',
           ))
           """
           marker = "hw_arch += {'arm': arm_ss}"
