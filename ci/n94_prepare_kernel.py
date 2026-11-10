@@ -241,6 +241,23 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             dtsdk_pos = kernel.find(dtsdk, dstart, dend)
             if dtsdk_pos != -1:
                 kernel = kernel[:dtsdk_pos] + replacement + kernel[dtsdk_pos + len(replacement):]
+    iop_match = b'<key>IOPropertyMatch</key><dict><key>role</key><string>IOP</string></dict>'
+    p1 = kernel.find(iop_match)
+    if p1 != -1:
+        repl_iop = b'<key>IOMatchCategory</key><string>EmbeddedIOP_Matched</string>'
+        repl_iop += b' ' * (len(iop_match) - len(repl_iop))
+        kernel = kernel[:p1] + repl_iop + kernel[p1 + len(iop_match):]
+    ppn_match = b'<key>IOPropertyMatch</key><dict><key>ppn-device</key><true/><key>ppn-ftl-ver</key><integer IDREF="13"/></dict>'
+    p2 = kernel.find(ppn_match)
+    if p2 != -1:
+        repl_ppn = b'<key>IOMatchCategory</key><string>AppleSwissPPNFTL_Matched</string>'
+        repl_ppn += b' ' * (len(ppn_match) - len(repl_ppn))
+        kernel = kernel[:p2] + repl_ppn + kernel[p2 + len(ppn_match):]
+    panic_bytes = bytes.fromhex('78487949794a7844794b79447a447b4400933a2302f014fc')
+    p3 = kernel.find(panic_bytes)
+    if p3 != -1:
+        code_patch = bytes.fromhex('42f69532 c8f20912 0be0 00bf00bf00bf00bf00bf00bf00bf')
+        kernel = kernel[:p3] + code_patch + kernel[p3 + len(panic_bytes):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -308,6 +325,9 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("page-bits", u32(12))
         disk.set("device-readid", b"\xad\xd5\x14\xb6\x44\x00\x00\x00")
         disk.set("dbg-chipids", b"\xad\xd5\x14\xb6\x44" + b"\x00" * 251)
+        disk.set("ppn-device", u32(1))
+        disk.set("ppn-ftl-ver", u32(2))
+        disk.set("default-ftl-version", u32(2))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
