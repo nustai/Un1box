@@ -252,6 +252,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->iop), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->iop), 0, S5L8940_IOP_BASE);
     sysbus_connect_irq(SYS_BUS_DEVICE(s->iop), 0, qdev_get_gpio_in(s->aic, 0x02));
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->aic), 4, qdev_get_gpio_in(s->iop, 0));
 
     /* 9. S5L8940 SPI1 Multitouch Controller */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->spi1), &error_fatal);

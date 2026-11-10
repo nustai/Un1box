@@ -320,6 +320,14 @@ static void s5l8940_iop_process_rings(S5L8940IOPState *s)
     }
 }
 
+static void s5l8940_iop_doorbell_in(void *opaque, int n, int level)
+{
+    S5L8940IOPState *s = opaque;
+    if (level && s->running) {
+        s5l8940_iop_process_rings(s);
+    }
+}
+
 void s5l8940_iop_ring_doorbell(DeviceState *dev)
 {
     S5L8940IOPState *s = S5L8940_IOP(dev);
@@ -329,7 +337,10 @@ void s5l8940_iop_ring_doorbell(DeviceState *dev)
 static void s5l8940_iop_doorbell_timer_cb(void *opaque)
 {
     S5L8940IOPState *s = opaque;
-    s5l8940_iop_process_rings(s);
+    if (s->running) {
+        s5l8940_iop_process_rings(s);
+        timer_mod(s->doorbell_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1);
+    }
 }
 
 static uint64_t s5l8940_iop_read(void *opaque, hwaddr offset, unsigned size)
@@ -368,8 +379,10 @@ static void s5l8940_iop_write(void *opaque, hwaddr offset, uint64_t value, unsig
             s->running = true;
             s->fw_config = 0;
             s5l8940_iop_process_rings(s);
+            timer_mod(s->doorbell_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 1);
         } else if (value == IOP_CTRL_STOP || value == IOP_CTRL_HALT) {
             s->running = false;
+            timer_del(s->doorbell_timer);
         }
         break;
     case IOP_REG_FW_BASE:
@@ -452,6 +465,7 @@ static void s5l8940_iop_init(Object *obj)
                           "s5l8940-iop", S5L8940_IOP_REG_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->irq);
+    qdev_init_gpio_in(DEVICE(obj), s5l8940_iop_doorbell_in, 1);
 
     s->nand_id = FMI_DEFAULT_NAND_ID;
     s->doorbell_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, s5l8940_iop_doorbell_timer_cb, s);

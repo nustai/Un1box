@@ -36,6 +36,7 @@ struct S5L8940AICState {
      */
     qemu_irq irq_out[2];
     qemu_irq fiq_out[2];
+    qemu_irq doorbell_out;
 
     uint32_t enabled[S5L8940_AIC_BANKS];
     uint32_t pending[S5L8940_AIC_BANKS];
@@ -260,6 +261,13 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
     case 0x140 ... 0x33c: /* AIC_INT_PRIORITY */
         s->priority[(offset - 0x140) / 4] = (uint32_t)value;
         break;
+    case 0x5000 ... 0x50ff:
+        /* DIPI registers (including 0x5030: DIPI 3 doorbell to IOP) */
+        s->storage[word_idx] = (uint32_t)value;
+        if (offset == 0x5030 && s->doorbell_out) {
+            qemu_irq_pulse(s->doorbell_out);
+        }
+        break;
     default:
         break;
     }
@@ -296,6 +304,7 @@ static void s5l8940_aic_init(Object *obj)
     sysbus_init_irq(dev, &s->fiq_out[0]);
     sysbus_init_irq(dev, &s->irq_out[1]);
     sysbus_init_irq(dev, &s->fiq_out[1]);
+    sysbus_init_irq(dev, &s->doorbell_out);
 
     /* DeviceTree target-destinations: [0x87, 0x01, 0x8b, 0x02]
      * Pairs of (routing_register_offset, cpu_bitmask):

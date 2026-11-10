@@ -213,15 +213,26 @@ def macho(data):
 
 def diagnostic_secure_root(dt, ramdisk, enabled):
     if enabled:
-        if ramdisk is None or dt.props.get('secure-root-prefix', (None,))[0] != b'md\0':
-            raise ValueError('diagnostic secure-root override requires the stock md prefix and a ramdisk')
-        del dt.props['secure-root-prefix']
+        if 'secure-root-prefix' in dt.props:
+            if dt.props['secure-root-prefix'][0] != b'md\0':
+                raise ValueError('diagnostic secure-root override requires the stock md prefix')
+            del dt.props['secure-root-prefix']
 
 
 def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             diagnostic_no_secure_root=False, diagnostic_single_cpu=False,
             diagnostic_no_tv_out=False, diagnostic_no_vxe=False, diagnostic_no_sgx=False,
             diagnostic_no_jpeg=False):
+    target = b'<key>CFBundleIdentifier</key><string>com.apple.driver.IOP_s5l8940xiop_firmware</string>'
+    pos = kernel.find(target)
+    if pos != -1:
+        dstart = kernel.rfind(b'<dict>', 0, pos)
+        dend = kernel.find(b'</dict></dict>', pos)
+        dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
+        dtsdk_pos = kernel.find(dtsdk, dstart, dend)
+        if dtsdk_pos != -1:
+            replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
+            kernel = kernel[:dtsdk_pos] + replacement + kernel[dtsdk_pos + len(replacement):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:

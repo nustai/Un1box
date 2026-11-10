@@ -189,6 +189,9 @@ static void s5l8940_spi_unlock_timer_cb(void *opaque)
     } else if (s->unlock_step == 16) {
         /* Release (ACTION_UP) at final destination */
         s5l8940_spi_inject_touch(DEVICE(s), 0.85f, 0.92f, S5L8940_TOUCH_PHASE_UP);
+        /* Periodic retrigger every 3 seconds to guarantee SpringBoard unlock once active */
+        s->unlock_step = 0;
+        timer_mod(s->unlock_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 3000);
     }
 }
 
@@ -247,6 +250,11 @@ static void s5l8940_spi_write(void *opaque, hwaddr offset, uint64_t value, unsig
             s5l8940_spi_rx_push(s, 0x00);
             s5l8940_spi_rx_push(s, 0x47);
             s5l8940_spi_update_irq(s);
+
+            /* Arm automated unlock timer to fire swipe gesture once SpringBoard UI is up */
+            if (s->unlock_step == 0) {
+                timer_mod(s->unlock_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 4000);
+            }
         } else if (cmd == MT_CMD_READ_FRAME && s->rx_count == 0) {
             /* Return empty frame if no touch pending */
             s5l8940_spi_rx_push(s, 0xAA);

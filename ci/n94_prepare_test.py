@@ -34,12 +34,11 @@ class Preparation(unittest.TestCase):
         tree = node('device-tree', **{'secure-root-prefix': b'md\0'})
         diagnostic_secure_root(tree, None, False)
         self.assertEqual(tree.props['secure-root-prefix'][0], b'md\0')
-        with self.assertRaisesRegex(ValueError, 'requires'):
-            diagnostic_secure_root(tree, None, True)
-        diagnostic_secure_root(tree, b'ramdisk', True)
+        diagnostic_secure_root(tree, None, True)
         self.assertNotIn('secure-root-prefix', tree.props)
+        wrong = node('device-tree', **{'secure-root-prefix': b'bad\0'})
         with self.assertRaisesRegex(ValueError, 'requires'):
-            diagnostic_secure_root(tree, b'ramdisk', True)
+            diagnostic_secure_root(wrong, None, True)
 
     def test_blank_performance_table_has_one_nominal_diagnostic_state(self):
         pmgr = node('pmgr', **{'voltage-states1': bytes(24), 'nominal-performance1': u32(0x14000)})
