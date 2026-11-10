@@ -369,7 +369,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("page-bits", u32(12))
         disk.set("device-readid", b"\xad\xd5\x14\xb6\x44\x00\x00\x00")
         disk.set("dbg-chipids", b"\xad\xd5\x14\xb6\x44" + b"\x00" * 251)
-        disk.props['ppn-device'] = (b'', 0)
+        disk.set("ppn-device", u32(1))
         disk.set("ppn-ftl-ver", u32(2))
         disk.set("default-ftl-version", u32(2))
     except (KeyError, ValueError, StopIteration):
