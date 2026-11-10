@@ -253,11 +253,16 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         repl_ppn = b'<key>IOMatchCategory</key><string>AppleSwissPPNFTL_Matched</string>'
         repl_ppn += b' ' * (len(ppn_match) - len(repl_ppn))
         kernel = kernel[:p2] + repl_ppn + kernel[p2 + len(ppn_match):]
-    score_target = b'<key>IOProbeScore</key><integer IDREF="43"/>'
-    p_score = kernel.find(score_target)
-    if p_score != -1:
-        score_repl = b'<key>IOProbeScore</key><integer>1000</integer>       '
-        kernel = kernel[:p_score] + score_repl + kernel[p_score + len(score_target):]
+    part_score = b'<key>IOClass</key><string>IOFlashPartitionScheme</string><key>IOProviderClass</key><string>IOFlashStorageDevice</string><key>IONameMatch</key><string>disk</string><key>IOProbeScore</key><integer IDREF="42"/>'
+    repl_part_score = b'<key>IOClass</key><string>IOFlashPartitionScheme</string><key>IOProviderClass</key><string>IOFlashStorageDevice</string><key>IONameMatch</key><string>disk</string><key>IOProbeScore</key><integer IDREF="43"/>'
+    p_part = kernel.find(part_score)
+    if p_part != -1:
+        kernel = kernel[:p_part] + repl_part_score + kernel[p_part + len(part_score):]
+    swiss_score = b'<string>disk</string><key>IOProbeScore</key><integer IDREF="43"/><key>IOProviderClass</key><string>IOFlashStorageDevice</string>'
+    repl_swiss_score = b'<string>disk</string><key>IOProbeScore</key><integer IDREF="42"/><key>IOProviderClass</key><string>IOFlashStorageDevice</string>'
+    p_swiss = kernel.find(swiss_score)
+    if p_swiss != -1:
+        kernel = kernel[:p_swiss] + repl_swiss_score + kernel[p_swiss + len(swiss_score):]
     panic_bytes = bytes.fromhex('78487949794a7844794b79447a447b4400933a2302f014fc')
     p3 = kernel.find(panic_bytes)
     if p3 != -1:
