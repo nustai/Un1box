@@ -223,16 +223,24 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             diagnostic_no_secure_root=False, diagnostic_single_cpu=False,
             diagnostic_no_tv_out=False, diagnostic_no_vxe=False, diagnostic_no_sgx=False,
             diagnostic_no_jpeg=False):
-    target = b'<key>CFBundleIdentifier</key><string>com.apple.driver.IOP_s5l8940xiop_firmware</string>'
-    pos = kernel.find(target)
-    if pos != -1:
-        dstart = kernel.rfind(b'<dict>', 0, pos)
-        dend = kernel.find(b'</dict></dict>', pos)
-        dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
-        dtsdk_pos = kernel.find(dtsdk, dstart, dend)
-        if dtsdk_pos != -1:
-            replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
-            kernel = kernel[:dtsdk_pos] + replacement + kernel[dtsdk_pos + len(replacement):]
+    kexts_to_enable = (
+        b'com.apple.driver.IOSlaveProcessor',
+        b'com.apple.iokit.IOFlashStorage',
+        b'com.apple.driver.AppleNANDConfigAccess',
+        b'com.apple.driver.EmbeddedIOP',
+        b'com.apple.driver.IOP_s5l8940xiop_firmware',
+    )
+    dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
+    replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
+    for kext_id in kexts_to_enable:
+        target = b'<key>CFBundleIdentifier</key><string>' + kext_id + b'</string>'
+        pos = kernel.find(target)
+        if pos != -1:
+            dstart = kernel.rfind(b'<dict>', 0, pos)
+            dend = kernel.find(b'</dict></dict>', pos)
+            dtsdk_pos = kernel.find(dtsdk, dstart, dend)
+            if dtsdk_pos != -1:
+                kernel = kernel[:dtsdk_pos] + replacement + kernel[dtsdk_pos + len(replacement):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -282,6 +290,11 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     # Reserve an emulator-owned crash-log buffer in guest RAM, not fake MMIO.
     pram_pa, pram_size = RAM + RAM_SIZE - (1 << 20), 1 << 20
     dt.at("pram").set("reg", u32(pram_pa, pram_size))
+    try:
+        iop = dt.at("arm-io/iop")
+        iop.set("role", b"IOP\0")
+    except (KeyError, ValueError, StopIteration):
+        pass
     try:
         disk = dt.at("arm-io/flash-controller0/disk")
         disk.set("#ce", u32(1))
