@@ -50,7 +50,7 @@ on:
       engine_ref:
         description: Engine branch, tag or commit to build
         required: true
-        default: perf
+        default: 8402d7bfb71337667ec5d1aa87349aed9fa5cfeb
       base_release_repository:
         description: Release whose APK supplies firmwarekit, USB bridge and guest tools
         required: true
@@ -127,7 +127,7 @@ jobs:
       # the steps, so no ${{ }} can end up inside a shell expansion (a missing brace there swallows the script).
       LT_JOBS: ${{ inputs.jobs || '4' }}
       ENGINE_REPO: ${{ inputs.engine_repository || 'KlugKlugTG/qemu-ios' }}
-      ENGINE_REF: ${{ inputs.engine_ref || 'perf' }}
+      ENGINE_REF: ${{ inputs.engine_ref || '8402d7bfb71337667ec5d1aa87349aed9fa5cfeb' }}
       DECLARED_BASE_RELEASE_REPO: ${{ inputs.base_release_repository || 'blake-lucas/LightTouch' }}
       DECLARED_BASE_RELEASE_TAG: ${{ inputs.base_release_tag || 'v0.0.10' }}
       DECLARED_DEBUGGABLE: ${{ inputs.debuggable || 'true' }}

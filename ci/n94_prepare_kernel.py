@@ -258,6 +258,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p3 != -1:
         code_patch = bytes.fromhex('42f69532 c8f20912 0be0 00bf00bf00bf00bf00bf00bf00bf')
         kernel = kernel[:p3] + code_patch + kernel[p3 + len(panic_bytes):]
+    # AppleA5IOP::start: invoke registerService(0) directly and return 1
+    a5iop_target = bytes.fromhex('2246206d0168d1f8085200213f4b00910021')
+    p4 = kernel.find(a5iop_target)
+    if p4 != -1:
+        a5iop_repl = bytes.fromhex('20680021d0f8602120469047012001b0b0bd')
+        kernel = kernel[:p4] + a5iop_repl + kernel[p4 + len(a5iop_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:

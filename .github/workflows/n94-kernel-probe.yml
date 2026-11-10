@@ -94,7 +94,7 @@ jobs:
             python3 ci/n94_rootfs.py n94-input.ipsw n94-rootfs-out --raw-volume n94-rootfs.raw
           fi
       - name: Capture actual guest execution
-        timeout-minutes: 6
+        timeout-minutes: 12
         env:
           N94_BREAKPOINT: ${{ inputs.breakpoint }}
           N94_FOLLOW_BREAKPOINT: ${{ inputs.follow_breakpoint }}
