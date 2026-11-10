@@ -229,7 +229,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.AppleNANDConfigAccess',
         b'com.apple.driver.EmbeddedIOP',
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
-        b'com.apple.driver.AppleSwissPPNFTL',
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
     replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
@@ -254,6 +253,11 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         repl_ppn = b'<key>IOMatchCategory</key><string>AppleSwissPPNFTL_Matched</string>'
         repl_ppn += b' ' * (len(ppn_match) - len(repl_ppn))
         kernel = kernel[:p2] + repl_ppn + kernel[p2 + len(ppn_match):]
+    score_target = b'<key>IOProbeScore</key><integer IDREF="43"/>'
+    p_score = kernel.find(score_target)
+    if p_score != -1:
+        score_repl = b'<key>IOProbeScore</key><integer>1000</integer>       '
+        kernel = kernel[:p_score] + score_repl + kernel[p_score + len(score_target):]
     panic_bytes = bytes.fromhex('78487949794a7844794b79447a447b4400933a2302f014fc')
     p3 = kernel.find(panic_bytes)
     if p3 != -1:
@@ -286,6 +290,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p7 != -1:
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
+    # IOFlashStorageDevice::start: invoke this->registerService(0) directly
+    # Target: 0x80862520 in IOFlashStorage
+    fdevice_target = bytes.fromhex('012684f8dc0000e00026304601b0f0bd')
+    p8 = kernel.find(fdevice_target)
+    if p8 != -1:
+        fdevice_repl = bytes.fromhex('204600212368d3f8683198470120f8bd')
+        kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -353,7 +364,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("page-bits", u32(12))
         disk.set("device-readid", b"\xad\xd5\x14\xb6\x44\x00\x00\x00")
         disk.set("dbg-chipids", b"\xad\xd5\x14\xb6\x44" + b"\x00" * 251)
-        disk.set("ppn-device", u32(1))
+        disk.props['ppn-device'] = (b'', 0)
         disk.set("ppn-ftl-ver", u32(2))
         disk.set("default-ftl-version", u32(2))
     except (KeyError, ValueError, StopIteration):
@@ -387,7 +398,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if ramdisk is not None:
         command += b" rd=md0"
     else:
-        command += b" rd=disk0"
+        command += b" rd=disk0 nand-enable-reformat=1"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)
