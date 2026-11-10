@@ -230,9 +230,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.EmbeddedIOP',
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
         b'com.apple.driver.AppleSwissPPNFTL',
-        b'com.apple.driver.AppleEffaceableStorage',
-        b'com.apple.driver.AppleEffaceableNANDNOR',
-        b'com.apple.driver.IOFlashNVRAM',
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
     replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
@@ -294,11 +291,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if end != len(raw_dt) or dt.encode() != raw_dt:
         raise ValueError("Apple DT parser did not round-trip the input")
     cleared_flags = dt.clear_firmware_flags()
-    try:
-        disk = dt.at('arm-io/flash-controller0/disk')
-        disk.props['ppn-device'] = (b'', 0)
-    except (KeyError, ValueError, StopIteration):
-        pass
     diagnostic_secure_root(dt, ramdisk, diagnostic_no_secure_root)
     if diagnostic_no_tv_out:
         # Diagnostic isolation only: do not claim to emulate external video.
