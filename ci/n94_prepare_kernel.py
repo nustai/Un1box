@@ -271,6 +271,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p5 != -1:
         fmi_clock_repl = bytes.fromhex('48f2a065c0f20105002600bf00bf00bf00bf')
         kernel = kernel[:p5] + fmi_clock_repl + kernel[p5 + len(fmi_clock_target):]
+    # AppleIOPFMI::_fmiProbeAllChips: register CE0 unconditionally
+    # Target: 0x80e4d98c in AppleIOPFMI
+    fmi_probe_target = bytes.fromhex('dbf8a422134213d0')
+    p6 = kernel.find(fmi_probe_target)
+    if p6 != -1:
+        fmi_probe_repl = bytes.fromhex('dbf8a42200bf00bf')
+        kernel = kernel[:p6] + fmi_probe_repl + kernel[p6 + len(fmi_probe_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
