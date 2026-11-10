@@ -278,6 +278,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p6 != -1:
         fmi_probe_repl = bytes.fromhex('dbf8a42200bf00bf')
         kernel = kernel[:p6] + fmi_probe_repl + kernel[p6 + len(fmi_probe_target):]
+    # AppleIOPFMIDMACommand::initBuffers: supply 4096 bytes meta buffer capacity
+    # Target: 0x80e5185c in AppleIOPFMI
+    fmi_dma_target = bytes.fromhex('d0f80c0141021020')
+    p7 = kernel.find(fmi_dma_target)
+    if p7 != -1:
+        fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
+        kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
