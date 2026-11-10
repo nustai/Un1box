@@ -264,6 +264,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p4 != -1:
         a5iop_repl = bytes.fromhex('20680021d0f8602120469047012001b0b0bd')
         kernel = kernel[:p4] + a5iop_repl + kernel[p4 + len(a5iop_target):]
+    # AppleIOPFMI::_fmiInitTimings: supply 100 MHz (100,000 KHz) nominal clock speed
+    # Target: 0x80e4d6aa in AppleIOPFMI
+    fmi_clock_target = bytes.fromhex('4ff47a72002304f090ff05460e46002c5ad0')
+    p5 = kernel.find(fmi_clock_target)
+    if p5 != -1:
+        fmi_clock_repl = bytes.fromhex('48f2a065c0f20105002600bf00bf00bf00bf')
+        kernel = kernel[:p5] + fmi_clock_repl + kernel[p5 + len(fmi_clock_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
