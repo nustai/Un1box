@@ -303,6 +303,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fdevice_repl = bytes.fromhex('204600f01df8606d002200230168d1f870612146b047204600212368d3f890319847012001b0f0bd')
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
+    # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
+    # Target: 0x80e4d4bc in AppleIOPFMI
+    fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')
+    p9 = kernel.find(fmi_newdev_target)
+    if p9 != -1:
+        fmi_newdev_repl = bytes.fromhex('3b4829465a4678440068d0f848335846984768b9')
+        assert len(fmi_newdev_repl) == len(fmi_newdev_target), f"Byte length mismatch: {len(fmi_newdev_repl)} != {len(fmi_newdev_target)}"
+        kernel = kernel[:p9] + fmi_newdev_repl + kernel[p9 + len(fmi_newdev_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -392,6 +400,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("#die-ce", u32(1))
         disk.set("meta-per-logical-page", u32(12))
         disk.set("valid-meta-per-logical-page", u32(10))
+        disk.set("ppn-spec-version", u32(0x10002))
+        disk.set("blocks-cau", u32(4096))
+        disk.set("caus-ce", u32(1))
+        disk.set("slc-pages", u32(128))
+        disk.set("mlc-pages", u32(128))
+        disk.set("match-oddeven-caus", u32(0))
+        disk.set("cau-bits", u32(1))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
