@@ -295,12 +295,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p7 != -1:
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
-    # IOFlashStorageDevice::start: invoke this->registerService(0) directly
-    # Target: 0x80862520 in IOFlashStorage (vtable offset 0x190 is IOService::registerService)
-    fdevice_target = bytes.fromhex('012684f8dc0000e00026304601b0f0bd')
+    # IOFlashStorageDevice::initWithRegistryEntry: attach to AppleIOPFMI and registerService(0) directly
+    # Target: 0x80862508 in IOFlashStorage (bypasses failing getBasicDeviceInfo and registers directly)
+    fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('204600212368d3f8903198470120f8bd')
+        fdevice_repl = bytes.fromhex('606d002200230168d1f870612146b047204600212368d3f8903198470120f8bd00bf00bf00bf00bf')
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
@@ -360,6 +360,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk = dt.at("arm-io/flash-controller0/disk")
         disk.set("#ce", u32(1))
         disk.set("ce-bitmap", u32(1))
+        disk.set("#databus", u32(1))
         disk.set("#page-bytes", u32(4096))
         disk.set("#spare-bytes", u32(128))
         disk.set("#block-pages", u32(128))
