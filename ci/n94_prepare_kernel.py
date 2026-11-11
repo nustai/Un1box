@@ -300,7 +300,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('204600f01df8606d002200230168d1f870612146b047204600212368d3f890319847012001b0f0bd00bf')
+        fdevice_repl = bytes.fromhex('204600f01df8606d002200230168d1f870612146b047204600212368d3f890319847012001b0f0bd')
+        assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
