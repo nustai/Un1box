@@ -360,7 +360,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk = dt.at("arm-io/flash-controller0/disk")
         disk.set("#ce", u32(1))
         disk.set("ce-bitmap", u32(1))
-        disk.set("#databus", u32(1))
         disk.set("#page-bytes", u32(4096))
         disk.set("#spare-bytes", u32(128))
         disk.set("#block-pages", u32(128))
