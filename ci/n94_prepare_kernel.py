@@ -295,12 +295,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p7 != -1:
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
-    # IOFlashStorageDevice::initWithRegistryEntry: attach to AppleIOPFMI and registerService(0) directly
-    # Target: 0x80862508 in IOFlashStorage (bypasses failing getBasicDeviceInfo and registers directly)
+    # IOFlashStorageDevice::initWithRegistryEntry: initialize basic geometry via 0x80862548, attach, and registerService(0)
+    # Target: 0x80862508 in IOFlashStorage (runs getBasicDeviceInfo + 0x8086261c, attaches, and registers)
     fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('606d002200230168d1f870612146b047204600212368d3f8903198470120f8bd00bf00bf00bf00bf')
+        fdevice_repl = bytes.fromhex('204600f01df8606d002200230168d1f870612146b047204600212368d3f890319847012001b0f0bd00bf')
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
@@ -357,9 +357,21 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     except (KeyError, ValueError, StopIteration):
         pass
     try:
+        fmi = dt.at("arm-io/flash-controller0")
+        fmi.set("#ce", u32(1))
+        fmi.set("ce-bitmap", u32(1))
+        fmi.set("#databus", u32(1))
+        fmi.set("enable-diff-dqs", u32(0))
+        fmi.set("enable-diff-re", u32(0))
+        fmi.set("enable-vref", u32(0))
+        fmi.set("retire-on-invalid-refresh", u32(0))
+    except (KeyError, ValueError, StopIteration):
+        pass
+    try:
         disk = dt.at("arm-io/flash-controller0/disk")
         disk.set("#ce", u32(1))
         disk.set("ce-bitmap", u32(1))
+        disk.set("#databus", u32(1))
         disk.set("#page-bytes", u32(4096))
         disk.set("#spare-bytes", u32(128))
         disk.set("#block-pages", u32(128))
@@ -372,6 +384,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("ppn-device", u32(1))
         disk.set("ppn-ftl-ver", u32(2))
         disk.set("default-ftl-version", u32(2))
+        disk.set("bbt-format", u32(3))
+        disk.set("vendor-type", u32(0x100014))
+        disk.set("ecc-threshold", u32(12))
+        disk.set("ecc-correctable", u32(16))
+        disk.set("#die-ce", u32(1))
+        disk.set("meta-per-logical-page", u32(12))
+        disk.set("valid-meta-per-logical-page", u32(10))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
