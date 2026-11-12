@@ -335,6 +335,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_cmd_pwr_repl = bytes.fromhex('dbf8880001eb4528002800bf')
         assert len(fmi_cmd_pwr_repl) == len(fmi_cmd_pwr_target), f"Byte length mismatch: {len(fmi_cmd_pwr_repl)} != {len(fmi_cmd_pwr_target)}"
         kernel = kernel[:p12] + fmi_cmd_pwr_repl + kernel[p12 + len(fmi_cmd_pwr_target):]
+    # IOPEndpoint::sendMessage: return kIOReturnSuccess immediately to bypass uninitialized endpoint panic
+    # Target: 0x810922ec in EmbeddedIOP (f0b503af4df8048d81b0044688462068)
+    iop_send_target = bytes.fromhex('f0b503af4df8048d81b0044688462068')
+    p13 = kernel.find(iop_send_target)
+    if p13 != -1:
+        iop_send_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
+        assert len(iop_send_repl) == len(iop_send_target), f"Byte length mismatch: {len(iop_send_repl)} != {len(iop_send_target)}"
+        kernel = kernel[:p13] + iop_send_repl + kernel[p13 + len(iop_send_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
