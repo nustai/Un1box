@@ -319,14 +319,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_skip_chan_repl = bytes.fromhex('109800284fe0')
         assert len(fmi_skip_chan_repl) == len(fmi_skip_chan_target), f"Byte length mismatch: {len(fmi_skip_chan_repl)} != {len(fmi_skip_chan_target)}"
         kernel = kernel[:p10] + fmi_skip_chan_repl + kernel[p10 + len(fmi_skip_chan_target):]
-    # AppleIOPFMI::openChannel: return kIOReturnSuccess immediately to prevent channel open timeout during attach
+    # AppleIOPFMI::openChannel: increment _powerRefCount and return kIOReturnSuccess
     # Target: 0x80e4f5e8 in AppleIOPFMI (f0b503af2de9000d83468846dbf88800)
     fmi_open_chan_target = bytes.fromhex('f0b503af2de9000d83468846dbf88800')
     p11 = kernel.find(fmi_open_chan_target)
     if p11 != -1:
-        fmi_open_chan_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
+        fmi_open_chan_repl = bytes.fromhex('d0f888100131c0f888100020704700bf')
         assert len(fmi_open_chan_repl) == len(fmi_open_chan_target), f"Byte length mismatch: {len(fmi_open_chan_repl)} != {len(fmi_open_chan_target)}"
         kernel = kernel[:p11] + fmi_open_chan_repl + kernel[p11 + len(fmi_open_chan_target):]
+    # AppleIOPFMI::_fmiSendCommand: nop the _powerRefCount > 0 panic branch
+    # Target: 0x80e50882 in AppleIOPFMI (dbf8880001eb4528002859dd -> dbf8880001eb4528002800bf)
+    fmi_cmd_pwr_target = bytes.fromhex('dbf8880001eb4528002859dd')
+    p12 = kernel.find(fmi_cmd_pwr_target)
+    if p12 != -1:
+        fmi_cmd_pwr_repl = bytes.fromhex('dbf8880001eb4528002800bf')
+        assert len(fmi_cmd_pwr_repl) == len(fmi_cmd_pwr_target), f"Byte length mismatch: {len(fmi_cmd_pwr_repl)} != {len(fmi_cmd_pwr_target)}"
+        kernel = kernel[:p12] + fmi_cmd_pwr_repl + kernel[p12 + len(fmi_cmd_pwr_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
