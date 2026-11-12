@@ -295,12 +295,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p7 != -1:
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
-    # IOFlashStorageDevice::initWithRegistryEntry: initialize basic geometry via 0x80862548, attach, and registerService(0)
-    # Target: 0x80862508 in IOFlashStorage (runs getBasicDeviceInfo + 0x8086261c, attaches, and registers)
+    # IOFlashStorageDevice::initWithRegistryEntry: initialize basic geometry via 0x80862548, skip blocking attach, and registerService(0)
+    # Target: 0x80862508 in IOFlashStorage (runs getBasicDeviceInfo + 0x8086261c, nops attach, and registers directly)
     fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('204600f01df8606d002200230168d1f870612146b047204600212368d3f890319847012001b0f0bd')
+        fdevice_repl = bytes.fromhex('204600f01df800bf00bf00bf00bf00bf00bf00bf00bf204600212368d3f890319847012001b0f0bd')
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
