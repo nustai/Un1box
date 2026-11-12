@@ -311,6 +311,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_newdev_repl = bytes.fromhex('3b4829465a4678440068d0f848335846984768b9')
         assert len(fmi_newdev_repl) == len(fmi_newdev_target), f"Byte length mismatch: {len(fmi_newdev_repl)} != {len(fmi_newdev_target)}"
         kernel = kernel[:p9] + fmi_newdev_repl + kernel[p9 + len(fmi_newdev_target):]
+    # AppleIOPFMI::newDeviceWithRegistryEntry: skip blocking IOP channel open loop and jump to geometry/device setup
+    # Target: 0x80e4d2f0 in AppleIOPFMI (1098 0028 4fd0 -> 1098 0028 4fe0)
+    fmi_skip_chan_target = bytes.fromhex('109800284fd0')
+    p10 = kernel.find(fmi_skip_chan_target)
+    if p10 != -1:
+        fmi_skip_chan_repl = bytes.fromhex('109800284fe0')
+        assert len(fmi_skip_chan_repl) == len(fmi_skip_chan_target), f"Byte length mismatch: {len(fmi_skip_chan_repl)} != {len(fmi_skip_chan_target)}"
+        kernel = kernel[:p10] + fmi_skip_chan_repl + kernel[p10 + len(fmi_skip_chan_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
