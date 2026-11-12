@@ -319,6 +319,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_skip_chan_repl = bytes.fromhex('109800284fe0')
         assert len(fmi_skip_chan_repl) == len(fmi_skip_chan_target), f"Byte length mismatch: {len(fmi_skip_chan_repl)} != {len(fmi_skip_chan_target)}"
         kernel = kernel[:p10] + fmi_skip_chan_repl + kernel[p10 + len(fmi_skip_chan_target):]
+    # AppleIOPFMI::openChannel: return kIOReturnSuccess immediately to prevent channel open timeout during attach
+    # Target: 0x80e4f5e8 in AppleIOPFMI (f0b503af2de9000d83468846dbf88800)
+    fmi_open_chan_target = bytes.fromhex('f0b503af2de9000d83468846dbf88800')
+    p11 = kernel.find(fmi_open_chan_target)
+    if p11 != -1:
+        fmi_open_chan_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
+        assert len(fmi_open_chan_repl) == len(fmi_open_chan_target), f"Byte length mismatch: {len(fmi_open_chan_repl)} != {len(fmi_open_chan_target)}"
+        kernel = kernel[:p11] + fmi_open_chan_repl + kernel[p11 + len(fmi_open_chan_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
