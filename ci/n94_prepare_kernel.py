@@ -343,6 +343,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         iop_send_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
         assert len(iop_send_repl) == len(iop_send_target), f"Byte length mismatch: {len(iop_send_repl)} != {len(iop_send_target)}"
         kernel = kernel[:p13] + iop_send_repl + kernel[p13 + len(iop_send_target):]
+    # EmbeddedIOP::_iopSendNMI: return immediately to suppress uninitialized IOP NMI panic
+    # Target: 0x8109158c in EmbeddedIOP
+    iop_nmi_target = bytes.fromhex('90b501af81b0044694f86c0060b90b480b490c4a78440c4b')
+    p14 = kernel.find(iop_nmi_target)
+    if p14 != -1:
+        iop_nmi_repl = bytes.fromhex('704700bf00bf00bf94f86c0060b90b480b490c4a78440c4b')
+        assert len(iop_nmi_repl) == len(iop_nmi_target), f"Byte length mismatch: {len(iop_nmi_repl)} != {len(iop_nmi_target)}"
+        kernel = kernel[:p14] + iop_nmi_repl + kernel[p14 + len(iop_nmi_target):]
+    # AppleIOPFMI::fmiTimeoutHandler: bypass NMI/panic path and exit cleanly on timeout
+    # Target: 0x80e4bde0 in AppleIOPFMI (012812d1 -> 01282be0 [b #0x80e4be3a])
+    fmi_timeout_target = bytes.fromhex('012812d11f481f497844794407f04ff9')
+    p15 = kernel.find(fmi_timeout_target)
+    if p15 != -1:
+        fmi_timeout_repl = bytes.fromhex('01282be01f481f497844794407f04ff9')
+        assert len(fmi_timeout_repl) == len(fmi_timeout_target), f"Byte length mismatch: {len(fmi_timeout_repl)} != {len(fmi_timeout_target)}"
+        kernel = kernel[:p15] + fmi_timeout_repl + kernel[p15 + len(fmi_timeout_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
