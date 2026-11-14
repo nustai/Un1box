@@ -250,8 +250,9 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     ppn_match = b'<key>IOPropertyMatch</key><dict><key>ppn-device</key><true/><key>ppn-ftl-ver</key><integer IDREF="13"/></dict>'
     p2 = kernel.find(ppn_match)
     if p2 != -1:
-        repl_ppn = b'<key>IOMatchCategory</key><string>AppleSwissPPNFTL_Matched</string>'
+        repl_ppn = b'<key>IOUserClientClass</key><string>AppleSwissPPNFTL_IgnoredClient</string>'
         repl_ppn += b' ' * (len(ppn_match) - len(repl_ppn))
+        assert len(repl_ppn) == len(ppn_match), f"Length mismatch: {len(repl_ppn)} != {len(ppn_match)}"
         kernel = kernel[:p2] + repl_ppn + kernel[p2 + len(ppn_match):]
     part_score = b'<key>IOClass</key><string>IOFlashPartitionScheme</string><key>IOProviderClass</key><string>IOFlashStorageDevice</string><key>IONameMatch</key><string>disk</string><key>IOProbeScore</key><integer IDREF="42"/>'
     repl_part_score = b'<key>IOClass</key><string>IOFlashPartitionScheme</string><key>IOProviderClass</key><string>IOFlashStorageDevice</string><key>IONameMatch</key><string>disk</string><key>IOProbeScore</key><integer IDREF="43"/>'
@@ -295,12 +296,25 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if p7 != -1:
         fmi_dma_repl = bytes.fromhex('4ff48051102000bf')
         kernel = kernel[:p7] + fmi_dma_repl + kernel[p7 + len(fmi_dma_target):]
-    # IOFlashStorageDevice::initWithRegistryEntry: initialize basic geometry via 0x80862548, skip blocking attach, and registerService(0)
-    # Target: 0x80862508 in IOFlashStorage (runs getBasicDeviceInfo + 0x8086261c, nops attach, and registers directly)
+    # IOFlashStorageDevice::initWithRegistryEntry: initialize geometry via 0x80862548, attach to provider in gIOServicePlane, and registerService(0)
+    # Target: 0x80862508 in IOFlashStorage (getBasicDeviceInfo + attach + registerService)
     fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        fdevice_repl = bytes.fromhex('204600f01df800bf00bf00bf00bf00bf00bf00bf00bf204600212368d3f890319847012001b0f0bd')
+        # 1. mov r0, r4; bl #0x80862548 (basic device setup)
+        # 2. mov r0, r4; ldr r1, [r4, #0x54]; bl #0x803326dc (attach in gIOServicePlane)
+        # 3. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
+        # 4. movs r0, #1; add sp, #4; pop {r4, r5, r6, r7, pc}
+        # 5. nop padding to 40 bytes
+        fdevice_repl = bytes.fromhex(
+            '204600f01df8'  # mov r0, r4; bl #0x80862548
+            '2046616d'      # mov r0, r4; ldr r1, [r4, #0x54]
+            'd0f6e3f0'      # bl #0x803326dc (IOService::attach)
+            '20460021'      # mov r0, r4; movs r1, #0
+            'd0f671f5'      # bl #0x80333000 (IOService::registerService)
+            '012001b0f0bd'  # movs r0, #1; add sp, #4; pop {r4, r5, r6, r7, pc}
+            '00bf00bf00bf00bf00bf00bf'  # 6 nops (12 bytes)
+        )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
