@@ -531,12 +531,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_dma_repl = bytes.fromhex('00207047' + '00bf' * 6)
         assert len(fmi_dma_repl) == len(fmi_dma_target), f"Byte length mismatch: {len(fmi_dma_repl)} != {len(fmi_dma_target)}"
         kernel = kernel[:p32] + fmi_dma_repl + kernel[p32 + len(fmi_dma_target):]
-    # AppleSwissPPNFTL/WMR_Start: return WMR_STATUS_SUCCESS (0x20000004) immediately after FIL_Init [OK]
+    # AppleSwissPPNFTL/WMR_Start: run BUF_Init to initialize buffer manager, then return WMR_STATUS_SUCCESS (0x20000004)
     # Target: 0x810d1e48 in AppleSwissPPNFTL
-    wmr_start_target = bytes.fromhex('21890a22a088fff749fe01464a480029')
+    wmr_start_target = bytes.fromhex('21890a22a088fff749fe01464a4800294cd1')
     p33 = kernel.find(wmr_start_target)
     if p33 != -1:
-        wmr_start_repl = bytes.fromhex('40f20400c2f2000050e0' + '00bf' * 3)
+        wmr_start_repl = bytes.fromhex('21890a22a088fff749fe40f20400c2f200004be0')
         assert len(wmr_start_repl) == len(wmr_start_target), f"Byte length mismatch: {len(wmr_start_repl)} != {len(wmr_start_target)}"
         kernel = kernel[:p33] + wmr_start_repl + kernel[p33 + len(wmr_start_target):]
     # AppleSwissPPNFTL::readPartitionTable: return 0 immediately to bypass uninitialized partition scan
