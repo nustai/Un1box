@@ -539,6 +539,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         wmr_start_repl = bytes.fromhex('40f20400c2f2000050e0' + '00bf' * 3)
         assert len(wmr_start_repl) == len(wmr_start_target), f"Byte length mismatch: {len(wmr_start_repl)} != {len(wmr_start_target)}"
         kernel = kernel[:p33] + wmr_start_repl + kernel[p33 + len(wmr_start_target):]
+    # AppleSwissPPNFTL::readPartitionTable: return 0 immediately to bypass uninitialized partition scan
+    # Target: 0x810c02bc in AppleSwissPPNFTL
+    read_part_target = bytes.fromhex('f0b503afadf5c06d81b04b4844f64c66')
+    p34 = kernel.find(read_part_target)
+    if p34 != -1:
+        read_part_repl = bytes.fromhex('00207047' + '00bf' * 6)
+        assert len(read_part_repl) == len(read_part_target), f"Byte length mismatch: {len(read_part_repl)} != {len(read_part_target)}"
+        kernel = kernel[:p34] + read_part_repl + kernel[p34 + len(read_part_target):]
+    # WMR_PPN_GetFPart: return _fpart without assertion to prevent NULL != _fpart panic
+    # Target: 0x810d3012 in AppleSwissPPNFTL
+    get_fpart_target = bytes.fromhex('7c442068002818bf90bd064840f29e33')
+    p35 = kernel.find(get_fpart_target)
+    if p35 != -1:
+        get_fpart_repl = bytes.fromhex('7c44206890bd00bf00bf064840f29e33')
+        assert len(get_fpart_repl) == len(get_fpart_target), f"Byte length mismatch: {len(get_fpart_repl)} != {len(get_fpart_target)}"
+        kernel = kernel[:p35] + get_fpart_repl + kernel[p35 + len(get_fpart_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
