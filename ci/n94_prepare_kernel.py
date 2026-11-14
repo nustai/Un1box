@@ -571,12 +571,12 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_fpart_reg_repl = bytes.fromhex('00f0bbb800bf00bf00bf00bf')
         assert len(swiss_fpart_reg_repl) == len(swiss_fpart_reg_target), f"Byte length mismatch: {len(swiss_fpart_reg_repl)} != {len(swiss_fpart_reg_target)}"
         kernel = kernel[:p37] + swiss_fpart_reg_repl + kernel[p37 + len(swiss_fpart_reg_target):]
-    # AppleSwissPPNFTL/WMR_Open: write sector size 512 to *r1 and return success (0)
+    # AppleSwissPPNFTL/WMR_Open: write total sector count 4127776 (0x3efc20) to *r0 and sector size 512 to *r1
     # Target: 0x810d20d4 in AppleSwissPPNFTL
-    wmr_open_target = bytes.fromhex('f0b503af2de9000df9b004919a460390')
+    wmr_open_target = bytes.fromhex('f0b503af2de9000df9b004919a4603909046994878440068')
     p38 = kernel.find(wmr_open_target)
     if p38 != -1:
-        wmr_open_repl = bytes.fromhex('40f200220a6000207047' + '00bf' * 3)
+        wmr_open_repl = bytes.fromhex('4ff62042c0f23e02026040f200220a600020704700bf00bf')
         assert len(wmr_open_repl) == len(wmr_open_target), f"Byte length mismatch: {len(wmr_open_repl)} != {len(wmr_open_target)}"
         kernel = kernel[:p38] + wmr_open_repl + kernel[p38 + len(wmr_open_target):]
     # WMR_PPN_GetFTL: return non-NULL pointer without assertion to prevent NULL != _ftl panic
@@ -595,6 +595,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         get_vfl_repl = bytes.fromhex('2068002808bf204690bd' + '00bf' * 11)
         assert len(get_vfl_repl) == len(get_vfl_target), f"Byte length mismatch: {len(get_vfl_repl)} != {len(get_vfl_target)}"
         kernel = kernel[:p40] + get_vfl_repl + kernel[p40 + len(get_vfl_target):]
+    # AppleSwissPPNFTL::readPartitionTableFromNand: return 1 partition with 4127776 sectors (2.11 GB)
+    # Target: 0x810c1698 in AppleSwissPPNFTL
+    read_part_target = bytes.fromhex('f0b503af2de9000d83b016468b460546002e46d0306800eb40008000')
+    p41 = kernel.find(read_part_target)
+    if p41 != -1:
+        read_part_repl = bytes.fromhex('0123136000230b604ff62043c0f23e034b604bf203038b6001207047')
+        assert len(read_part_repl) == len(read_part_target), f"Byte length mismatch: {len(read_part_repl)} != {len(read_part_target)}"
+        kernel = kernel[:p41] + read_part_repl + kernel[p41 + len(read_part_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
