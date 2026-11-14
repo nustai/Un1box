@@ -400,6 +400,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_spares_repl = bytes.fromhex('4ff0640b00bf00bf00bf00bf00bf')
         assert len(swiss_spares_repl) == len(swiss_spares_target), f"Byte length mismatch: {len(swiss_spares_repl)} != {len(swiss_spares_target)}"
         kernel = kernel[:p18] + swiss_spares_repl + kernel[p18 + len(swiss_spares_target):]
+    # AppleSwissPPNFTL: unconditionally allocate concurrent command queue
+    # Target: 0x810c10dc in AppleSwissPPNFTL
+    swiss_queue_target = bytes.fromhex('9af8d90010f0010f2ad0')
+    p19 = kernel.find(swiss_queue_target)
+    if p19 != -1:
+        swiss_queue_repl = bytes.fromhex('9af8d90000bf00bf00bf')
+        assert len(swiss_queue_repl) == len(swiss_queue_target), f"Byte length mismatch: {len(swiss_queue_repl)} != {len(swiss_queue_target)}"
+        kernel = kernel[:p19] + swiss_queue_repl + kernel[p19 + len(swiss_queue_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -496,9 +504,10 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("mlc-pages", u32(128))
         disk.set("match-oddeven-caus", u32(0))
         disk.set("cau-bits", u32(1))
-        disk.set("capabilities", u32(7))
+        disk.set("capabilities", u32(0x127))
         disk.set("use-4k-aes-chain", u32(0))
         disk.set("bfn-max-spares", u32(100))
+        disk.set("#concurrent-commands", u32(4))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
