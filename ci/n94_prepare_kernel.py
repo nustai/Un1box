@@ -515,6 +515,30 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         part_repl = bytes.fromhex('0a980999084000bf00bf')
         assert len(part_repl) == len(part_target), f"Byte length mismatch: {len(part_repl)} != {len(part_target)}"
         kernel = kernel[:p30] + part_repl + kernel[p30 + len(part_target):]
+    # AppleIOPFMI::submitDMACommandGated: return kIOReturnSuccess immediately to bypass uninitialized DMA command pool
+    # Target: 0x80e4c0dc in AppleIOPFMI
+    fmi_dma_gate_target = bytes.fromhex('f0b503af2de9000581b00446904694f8')
+    p31 = kernel.find(fmi_dma_gate_target)
+    if p31 != -1:
+        fmi_dma_gate_repl = bytes.fromhex('00207047' + '00bf' * 6)
+        assert len(fmi_dma_gate_repl) == len(fmi_dma_gate_target), f"Byte length mismatch: {len(fmi_dma_gate_repl)} != {len(fmi_dma_gate_target)}"
+        kernel = kernel[:p31] + fmi_dma_gate_repl + kernel[p31 + len(fmi_dma_gate_target):]
+    # AppleIOPFMI::submitDMACommand: return kIOReturnSuccess immediately
+    # Target: 0x80e4ea08 in AppleIOPFMI
+    fmi_dma_target = bytes.fromhex('80b56f4682b0036f91468c46d0f89c13')
+    p32 = kernel.find(fmi_dma_target)
+    if p32 != -1:
+        fmi_dma_repl = bytes.fromhex('00207047' + '00bf' * 6)
+        assert len(fmi_dma_repl) == len(fmi_dma_target), f"Byte length mismatch: {len(fmi_dma_repl)} != {len(fmi_dma_target)}"
+        kernel = kernel[:p32] + fmi_dma_repl + kernel[p32 + len(fmi_dma_target):]
+    # AppleSwissPPNFTL/WMR_Start: return WMR_STATUS_SUCCESS (0x20000004) immediately after FIL_Init [OK]
+    # Target: 0x810d1e48 in AppleSwissPPNFTL
+    wmr_start_target = bytes.fromhex('21890a22a088fff749fe01464a480029')
+    p33 = kernel.find(wmr_start_target)
+    if p33 != -1:
+        wmr_start_repl = bytes.fromhex('40f20400c2f2000050e0' + '00bf' * 3)
+        assert len(wmr_start_repl) == len(wmr_start_target), f"Byte length mismatch: {len(wmr_start_repl)} != {len(wmr_start_target)}"
+        kernel = kernel[:p33] + wmr_start_repl + kernel[p33 + len(wmr_start_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
