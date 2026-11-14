@@ -533,7 +533,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         kernel = kernel[:p32] + fmi_dma_repl + kernel[p32 + len(fmi_dma_target):]
     # AppleSwissPPNFTL/WMR_Start: run BUF_Init to initialize buffer manager, then return WMR_STATUS_SUCCESS (0x20000004)
     # Target: 0x810d1e48 in AppleSwissPPNFTL
-    wmr_start_target = bytes.fromhex('21890a22a088fff749fe01464a4800294cd1')
+    wmr_start_target = bytes.fromhex('21890a22a088fff749fe01464a4800294cd14046')
     p33 = kernel.find(wmr_start_target)
     if p33 != -1:
         wmr_start_repl = bytes.fromhex('21890a22a088fff749fe40f20400c2f200004be0')
