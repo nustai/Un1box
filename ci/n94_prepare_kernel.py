@@ -442,6 +442,38 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_cmd_count_repl = bytes.fromhex('0420caf8840000bf')
         assert len(fmi_cmd_count_repl) == len(fmi_cmd_count_target), f"Byte length mismatch: {len(fmi_cmd_count_repl)} != {len(fmi_cmd_count_target)}"
         kernel = kernel[:p22] + fmi_cmd_count_repl + kernel[p22 + len(fmi_cmd_count_target):]
+    # AppleIOPFMI::submitCommandWait: nop cbz to complete synchronous commands immediately
+    # Target: 0x80e4eb3e in AppleIOPFMI (98f8380108b100244de0 -> 98f8380100bf00244de0)
+    fmi_sync_target = bytes.fromhex('98f8380108b100244de0')
+    p23 = kernel.find(fmi_sync_target)
+    if p23 != -1:
+        fmi_sync_repl = bytes.fromhex('98f8380100bf00244de0')
+        assert len(fmi_sync_repl) == len(fmi_sync_target), f"Byte length mismatch: {len(fmi_sync_repl)} != {len(fmi_sync_target)}"
+        kernel = kernel[:p23] + fmi_sync_repl + kernel[p23 + len(fmi_sync_target):]
+    # AppleIOPFMI::_fmiSendCommand: call _fmiPpnCompletion immediately instead of arming timeout timer
+    # Target: 0x80e50914 in AppleIOPFMI
+    fmi_send_target = bytes.fromhex('dbf8640070b160690168d1f8a01088476069dbf864100268526f904760690168496d8847002001b0bde8000df0bd')
+    p24 = kernel.find(fmi_send_target)
+    if p24 != -1:
+        fmi_send_repl = bytes.fromhex('2046fff74bfe002001b0bde8000df0bd' + '00bf' * 15)
+        assert len(fmi_send_repl) == len(fmi_send_target), f"Byte length mismatch: {len(fmi_send_repl)} != {len(fmi_send_target)}"
+        kernel = kernel[:p24] + fmi_send_repl + kernel[p24 + len(fmi_send_target):]
+    # AppleSwissPPNFTL::start: force r8 = WMR_STATUS_SUCCESS (0x20000004) and nop failure branch
+    # Target: 0x810c05b6 in AppleSwissPPNFTL (a44880450ed1 -> a448804600bf)
+    swiss_wmr_target = bytes.fromhex('a44880450ed1')
+    p25 = kernel.find(swiss_wmr_target)
+    if p25 != -1:
+        swiss_wmr_repl = bytes.fromhex('a448804600bf')
+        assert len(swiss_wmr_repl) == len(swiss_wmr_target), f"Byte length mismatch: {len(swiss_wmr_repl)} != {len(swiss_wmr_target)}"
+        kernel = kernel[:p25] + swiss_wmr_repl + kernel[p25 + len(swiss_wmr_target):]
+    # AppleSwissPPNFTL::start: nop the reformat branch to call readPartitionTable and set r5 = 1
+    # Target: 0x810c05cc in AppleSwissPPNFTL (1098002814d0fff773fe0125 -> 1098002800bffff773fe0125)
+    swiss_ref_target = bytes.fromhex('1098002814d0fff773fe0125')
+    p26 = kernel.find(swiss_ref_target)
+    if p26 != -1:
+        swiss_ref_repl = bytes.fromhex('1098002800bffff773fe0125')
+        assert len(swiss_ref_repl) == len(swiss_ref_target), f"Byte length mismatch: {len(swiss_ref_repl)} != {len(swiss_ref_target)}"
+        kernel = kernel[:p26] + swiss_ref_repl + kernel[p26 + len(swiss_ref_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
