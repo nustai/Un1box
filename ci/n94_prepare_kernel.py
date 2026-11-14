@@ -392,6 +392,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         nand_aes_repl = bytes.fromhex('0020c4f8e000' + '00bf' * 14)
         assert len(nand_aes_repl) == len(nand_aes_target), f"Byte length mismatch: {len(nand_aes_repl)} != {len(nand_aes_target)}"
         kernel = kernel[:p17] + nand_aes_repl + kernel[p17 + len(nand_aes_target):]
+    # AppleSwissPPNFTL::start: bypass bfn-max-spares assert and set fp = 100
+    # Target: 0x810c053c in AppleSwissPPNFTL
+    swiss_spares_target = bytes.fromhex('002d52d02868016d284688478346')
+    p18 = kernel.find(swiss_spares_target)
+    if p18 != -1:
+        swiss_spares_repl = bytes.fromhex('4ff0640b00bf00bf00bf00bf00bf')
+        assert len(swiss_spares_repl) == len(swiss_spares_target), f"Byte length mismatch: {len(swiss_spares_repl)} != {len(swiss_spares_target)}"
+        kernel = kernel[:p18] + swiss_spares_repl + kernel[p18 + len(swiss_spares_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -490,6 +498,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("cau-bits", u32(1))
         disk.set("capabilities", u32(7))
         disk.set("use-4k-aes-chain", u32(0))
+        disk.set("bfn-max-spares", u32(100))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
@@ -515,7 +524,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     cooked_dt = dt.encode()
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
-    command = b"-v serial=3 debug=0x14e keepsyms=1"
+    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1"
     if diagnostic_single_cpu:
         command += b" cpus=1"
     if ramdisk is not None:
