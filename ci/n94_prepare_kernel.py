@@ -500,6 +500,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_ret_repl = bytes.fromhex('206800210125d0f8602120469047')
         assert len(swiss_ret_repl) == len(swiss_ret_target), f"Byte length mismatch: {len(swiss_ret_repl)} != {len(swiss_ret_target)}"
         kernel = kernel[:p28] + swiss_ret_repl + kernel[p28 + len(swiss_ret_target):]
+    # AppleIOPFMI: bypass releasePower to eliminate power-down sleep hang
+    # Target: 0x80e4f6bc in AppleIOPFMI (f0b503af2de9000582468846daf888000138caf8 -> 0020704700bf00bf00bf00bf00bf00bf00bf00bf)
+    fmi_pwr_target = bytes.fromhex('f0b503af2de9000582468846daf888000138caf8')
+    p29 = kernel.find(fmi_pwr_target)
+    if p29 != -1:
+        fmi_pwr_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf00bf00bf')
+        assert len(fmi_pwr_repl) == len(fmi_pwr_target), f"Byte length mismatch: {len(fmi_pwr_repl)} != {len(fmi_pwr_target)}"
+        kernel = kernel[:p29] + fmi_pwr_repl + kernel[p29 + len(fmi_pwr_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
