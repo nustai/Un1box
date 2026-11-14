@@ -579,6 +579,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         wmr_open_repl = bytes.fromhex('40f200220a6000207047' + '00bf' * 3)
         assert len(wmr_open_repl) == len(wmr_open_target), f"Byte length mismatch: {len(wmr_open_repl)} != {len(wmr_open_target)}"
         kernel = kernel[:p38] + wmr_open_repl + kernel[p38 + len(wmr_open_target):]
+    # WMR_PPN_GetFTL: return non-NULL pointer without assertion to prevent NULL != _ftl panic
+    # Target: 0x810d2fa4 in AppleSwissPPNFTL
+    get_ftl_target = bytes.fromhex('2068002818bf90bd06484ff463730649064a784479447a4409f0d0fb206890bd')
+    p39 = kernel.find(get_ftl_target)
+    if p39 != -1:
+        get_ftl_repl = bytes.fromhex('2068002808bf204690bd' + '00bf' * 11)
+        assert len(get_ftl_repl) == len(get_ftl_target), f"Byte length mismatch: {len(get_ftl_repl)} != {len(get_ftl_target)}"
+        kernel = kernel[:p39] + get_ftl_repl + kernel[p39 + len(get_ftl_target):]
+    # WMR_PPN_GetVFL: return non-NULL pointer without assertion to prevent NULL != _vfl panic
+    # Target: 0x810d2fdc in AppleSwissPPNFTL
+    get_vfl_target = bytes.fromhex('2068002818bf90bd064840f295330649064a784479447a4409f0b4fb206890bd')
+    p40 = kernel.find(get_vfl_target)
+    if p40 != -1:
+        get_vfl_repl = bytes.fromhex('2068002808bf204690bd' + '00bf' * 11)
+        assert len(get_vfl_repl) == len(get_vfl_target), f"Byte length mismatch: {len(get_vfl_repl)} != {len(get_vfl_target)}"
+        kernel = kernel[:p40] + get_vfl_repl + kernel[p40 + len(get_vfl_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
