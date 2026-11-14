@@ -301,22 +301,28 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     fdevice_target = bytes.fromhex('00f01ef801280bd1606d002200230168d1f870612146b047012684f8dc0000e00026304601b0f0bd')
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
-        # 1. mov r0, r4; bl #0x80862548 (basic device setup)
+        # 1. bl #0x80862548 (basic device setup)
         # 2. mov r0, r4; ldr r1, [r4, #0x54]; bl #0x803326dc (attach in gIOServicePlane)
-        # 3. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
-        # 4. movs r0, #1; strb.w r0, [r4, #0xdc] (_isProviderOpen = 1); add sp, #4; pop {r4, r5, r6, r7, pc}
-        # 5. nop padding to 40 bytes
+        # 3. ldr r0, [r4, #0x54]; mov r1, r4; movs r2, #0; movs r3, #0; bl #0x803362e0 (IOService::open -> AppleIOPFMI::handleOpen)
+        # 4. strb.w r0, [r4, #0xdc] (_isProviderOpen = 1)
+        # 5. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
+        # 6. add sp, #4; pop {r4, r5, r6, r7, pc}
         fdevice_repl = bytes.fromhex(
-            '204600f01df8'  # mov r0, r4; bl #0x80862548
-            '2046616d'      # mov r0, r4; ldr r1, [r4, #0x54]
-            'd0f6e3f0'      # bl #0x803326dc (IOService::attach)
-            '20460021'      # mov r0, r4; movs r1, #0
-            'd0f671f5'      # bl #0x80333000 (IOService::registerService)
-            '0120'          # movs r0, #1
-            '84f8dc00'      # strb.w r0, [r4, #0xdc]
-            '01b0'          # add sp, #4
-            'f0bd'          # pop {r4, r5, r6, r7, pc}
-            '00bf00bf00bf00bf'  # 4 nops (8 bytes)
+            '00f01ef8'  # 0x80862508: bl #0x80862548 (basic device setup)
+            '2046'      # 0x8086250c: mov r0, r4
+            '616d'      # 0x8086250e: ldr r1, [r4, #0x54] (provider)
+            'd0f6e4f0'  # 0x80862510: bl #0x803326dc (IOService::attach)
+            '606d'      # 0x80862514: ldr r0, [r4, #0x54] (provider)
+            '2146'      # 0x80862516: mov r1, r4 (this)
+            '0022'      # 0x80862518: movs r2, #0 (options)
+            '0023'      # 0x8086251a: movs r3, #0 (arg)
+            'd3f6e0f6'  # 0x8086251c: bl #0x803362e0 (IOService::open -> AppleIOPFMI::handleOpen)
+            '84f8dc00'  # 0x80862520: strb.w r0, [r4, #0xdc] (set _isProviderOpen = 1)
+            '2046'      # 0x80862524: mov r0, r4
+            '0021'      # 0x80862526: movs r1, #0
+            'd0f66af5'  # 0x80862528: bl #0x80333000 (IOService::registerService)
+            '01b0'      # 0x8086252c: add sp, #4
+            'f0bd'      # 0x8086252e: pop {r4, r5, r6, r7, pc}
         )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
