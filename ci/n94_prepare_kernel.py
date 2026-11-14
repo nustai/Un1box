@@ -555,6 +555,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         get_fpart_repl = bytes.fromhex('7c44206890bd00bf00bf064840f29e33')
         assert len(get_fpart_repl) == len(get_fpart_target), f"Byte length mismatch: {len(get_fpart_repl)} != {len(get_fpart_target)}"
         kernel = kernel[:p35] + get_fpart_repl + kernel[p35 + len(get_fpart_target):]
+    # AppleSwissPPNFTL: return 0x20000001 from WMR_PPN_GetFPart to bypass magic assert and proceed to partition registration
+    # Target: 0x810d2800 in AppleSwissPPNFTL
+    wmr_fpart_stub_target = bytes.fromhex('f0b503af2de9000d81b0464c06460d46')
+    p36 = kernel.find(wmr_fpart_stub_target)
+    if p36 != -1:
+        wmr_fpart_stub_repl = bytes.fromhex('40f20100c2f200007047' + '00bf' * 3)
+        assert len(wmr_fpart_stub_repl) == len(wmr_fpart_stub_target), f"Byte length mismatch: {len(wmr_fpart_stub_repl)} != {len(wmr_fpart_stub_target)}"
+        kernel = kernel[:p36] + wmr_fpart_stub_repl + kernel[p36 + len(wmr_fpart_stub_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
