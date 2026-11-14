@@ -302,28 +302,31 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     p8 = kernel.find(fdevice_target)
     if p8 != -1:
         # 1. bl #0x80862548 (basic device setup)
-        # 2. mov r0, r4; ldr r1, [r4, #0x54]; bl #0x803326dc (attach in gIOServicePlane)
-        # 3. mov r0, r1; bl #0x80e4df74 (AppleIOPFMI::createCommandPool -> allocates pool and sets [provider, #0x80])
-        # 4. movs r0, #1; strb.w r0, [r4, #0xdc] (_isProviderOpen = 1)
-        # 5. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
-        # 6. movs r0, #1 (return true!); add sp, #4; pop {r4, r5, r6, r7, pc}
-        # 7. nop (2 bytes)
+        # 2. ldr r0, [r4, #0x54] (provider = AppleIOPFMI)
+        # 3. mov r1, r4 (client = IOFlashStorageDevice)
+        # 4. movs r2, #0; movs r3, #0
+        # 5. bl #0x803362e0 (IOService::open -> AppleIOPFMI::handleOpen)
+        # 6. strb.w r0, [r4, #0xdc] (set _isProviderOpen = 1)
+        # 7. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
+        # 8. movs r0, #1 (return true!); add sp, #4; pop {r4, r5, r6, r7, pc}
+        # 9. 3 nops (6 bytes)
         fdevice_repl = bytes.fromhex(
             '00f01ef8'      # 0x80862508: bl #0x80862548 (basic device setup)
-            '2046'          # 0x8086250c: mov r0, r4 (client)
-            '616d'          # 0x8086250e: ldr r1, [r4, #0x54] (provider)
-            'd0f6e4f0'      # 0x80862510: bl #0x803326dc (IOService::attach)
-            '0846'          # 0x80862514: mov r0, r1 (provider)
-            'ebf12df5'      # 0x80862516: bl #0x80e4df74 (AppleIOPFMI::createCommandPool)
-            '0120'          # 0x8086251a: movs r0, #1
-            '84f8dc00'      # 0x8086251c: strb.w r0, [r4, #0xdc] (set _isProviderOpen = 1)
-            '2046'          # 0x80862520: mov r0, r4
-            '0021'          # 0x80862522: movs r1, #0
-            'd0f66cf5'      # 0x80862524: bl #0x80333000 (IOService::registerService)
-            '0120'          # 0x80862528: movs r0, #1 (return 1 / true!)
-            '01b0'          # 0x8086252a: add sp, #4
-            'f0bd'          # 0x8086252c: pop {r4, r5, r6, r7, pc}
-            '00bf'          # 0x8086252e: nop (2 bytes)
+            '606d'          # 0x8086250c: ldr r0, [r4, #0x54] (provider)
+            '2146'          # 0x8086250e: mov r1, r4 (client)
+            '0022'          # 0x80862510: movs r2, #0 (options)
+            '0023'          # 0x80862512: movs r3, #0 (arg)
+            'd3f6e4f6'      # 0x80862514: bl #0x803362e0 (IOService::open -> AppleIOPFMI::handleOpen)
+            '84f8dc00'      # 0x80862518: strb.w r0, [r4, #0xdc] (set _isProviderOpen = 1)
+            '2046'          # 0x8086251c: mov r0, r4 (client)
+            '0021'          # 0x8086251e: movs r1, #0 (options)
+            'd0f66ef5'      # 0x80862520: bl #0x80333000 (IOService::registerService)
+            '0120'          # 0x80862524: movs r0, #1 (return 1 / true!)
+            '01b0'          # 0x80862526: add sp, #4
+            'f0bd'          # 0x80862528: pop {r4, r5, r6, r7, pc}
+            '00bf'          # 0x8086252a: nop
+            '00bf'          # 0x8086252c: nop
+            '00bf'          # 0x8086252e: nop
         )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
@@ -415,6 +418,30 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_queue_repl = bytes.fromhex('9af8d90000bf00bf00bf')
         assert len(swiss_queue_repl) == len(swiss_queue_target), f"Byte length mismatch: {len(swiss_queue_repl)} != {len(swiss_queue_target)}"
         kernel = kernel[:p19] + swiss_queue_repl + kernel[p19 + len(swiss_queue_target):]
+    # AppleIOPFMI::_fmiTestCommand: return kIOReturnSuccess immediately to bypass uninitialized IOP test command timeout
+    # Target: 0x80e4e6f0 in AppleIOPFMI (f0b503af82b00446206f04f0e7fbd4f8)
+    fmi_test_target = bytes.fromhex('f0b503af82b00446206f04f0e7fbd4f8')
+    p20 = kernel.find(fmi_test_target)
+    if p20 != -1:
+        fmi_test_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
+        assert len(fmi_test_repl) == len(fmi_test_target), f"Byte length mismatch: {len(fmi_test_repl)} != {len(fmi_test_target)}"
+        kernel = kernel[:p20] + fmi_test_repl + kernel[p20 + len(fmi_test_target):]
+    # AppleIOPFMI::_fmiTestCommand2: return kIOReturnSuccess immediately
+    # Target: 0x80e4e770 in AppleIOPFMI (f0b503af84b00446174802900026206f)
+    fmi_test2_target = bytes.fromhex('f0b503af84b00446174802900026206f')
+    p21 = kernel.find(fmi_test2_target)
+    if p21 != -1:
+        fmi_test2_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf00bf')
+        assert len(fmi_test2_repl) == len(fmi_test2_target), f"Byte length mismatch: {len(fmi_test2_repl)} != {len(fmi_test2_target)}"
+        kernel = kernel[:p21] + fmi_test2_repl + kernel[p21 + len(fmi_test2_target):]
+    # AppleIOPFMI::createCommandPool: supply 4 commands capacity to ensure command pool allocation
+    # Target: 0x80e4e002 in AppleIOPFMI (daf8840000284ad0)
+    fmi_cmd_count_target = bytes.fromhex('daf8840000284ad0')
+    p22 = kernel.find(fmi_cmd_count_target)
+    if p22 != -1:
+        fmi_cmd_count_repl = bytes.fromhex('0420caf8840000bf')
+        assert len(fmi_cmd_count_repl) == len(fmi_cmd_count_target), f"Byte length mismatch: {len(fmi_cmd_count_repl)} != {len(fmi_cmd_count_target)}"
+        kernel = kernel[:p22] + fmi_cmd_count_repl + kernel[p22 + len(fmi_cmd_count_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
