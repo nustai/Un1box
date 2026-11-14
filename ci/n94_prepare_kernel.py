@@ -484,6 +484,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_ref_repl = bytes.fromhex('1098002800bffff773fe0125')
         assert len(swiss_ref_repl) == len(swiss_ref_target), f"Byte length mismatch: {len(swiss_ref_repl)} != {len(swiss_ref_target)}"
         kernel = kernel[:p26] + swiss_ref_repl + kernel[p26 + len(swiss_ref_target):]
+    # AppleIOPFMI: bypass synchronous wait loop to complete commands immediately with status 0
+    # Target: 0x80e50cc0 in AppleIOPFMI (f0b503af2de9000d84b088460546d8f814001646 -> 012081f818000020704700bf00bf00bf00bf00bf)
+    fmi_wait_target = bytes.fromhex('f0b503af2de9000d84b088460546d8f814001646')
+    p27 = kernel.find(fmi_wait_target)
+    if p27 != -1:
+        fmi_wait_repl = bytes.fromhex('012081f818000020704700bf00bf00bf00bf00bf')
+        assert len(fmi_wait_repl) == len(fmi_wait_target), f"Byte length mismatch: {len(fmi_wait_repl)} != {len(fmi_wait_target)}"
+        kernel = kernel[:p27] + fmi_wait_repl + kernel[p27 + len(fmi_wait_target):]
+    # AppleSwissPPNFTL::start: ensure r5 = 1 before returning so start() returns true
+    # Target: 0x810c068e in AppleSwissPPNFTL (206800210025d0f8602120469047 -> 206800210125d0f8602120469047)
+    swiss_ret_target = bytes.fromhex('206800210025d0f8602120469047')
+    p28 = kernel.find(swiss_ret_target)
+    if p28 != -1:
+        swiss_ret_repl = bytes.fromhex('206800210125d0f8602120469047')
+        assert len(swiss_ret_repl) == len(swiss_ret_target), f"Byte length mismatch: {len(swiss_ret_repl)} != {len(swiss_ret_target)}"
+        kernel = kernel[:p28] + swiss_ret_repl + kernel[p28 + len(swiss_ret_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
