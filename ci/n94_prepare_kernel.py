@@ -563,6 +563,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         wmr_fpart_stub_repl = bytes.fromhex('40f20100c2f200007047' + '00bf' * 3)
         assert len(wmr_fpart_stub_repl) == len(wmr_fpart_stub_target), f"Byte length mismatch: {len(wmr_fpart_stub_repl)} != {len(wmr_fpart_stub_target)}"
         kernel = kernel[:p36] + wmr_fpart_stub_repl + kernel[p36 + len(wmr_fpart_stub_target):]
+    # AppleSwissPPNFTL::start: force branch to partition and block device registration at 0x810c08ce
+    # Target: 0x810c0754 in AppleSwissPPNFTL (11f04cfe0346002b00f0b780 -> 11f04cfe0023002b00f0b780)
+    swiss_fpart_reg_target = bytes.fromhex('11f04cfe0346002b00f0b780')
+    p37 = kernel.find(swiss_fpart_reg_target)
+    if p37 != -1:
+        swiss_fpart_reg_repl = bytes.fromhex('11f04cfe0023002b00f0b780')
+        assert len(swiss_fpart_reg_repl) == len(swiss_fpart_reg_target), f"Byte length mismatch: {len(swiss_fpart_reg_repl)} != {len(swiss_fpart_reg_target)}"
+        kernel = kernel[:p37] + swiss_fpart_reg_repl + kernel[p37 + len(swiss_fpart_reg_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -633,13 +641,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("#ce", u32(1))
         disk.set("ce-bitmap", u32(1))
         disk.set("#databus", u32(1))
-        disk.set("#page-bytes", u32(4096))
-        disk.set("#spare-bytes", u32(128))
-        disk.set("#block-pages", u32(128))
+        disk.set("#page-bytes", u32(8192))
+        disk.set("#spare-bytes", u32(448))
+        disk.set("#block-pages", u32(256))
         disk.set("#ce-blocks", u32(4096))
-        disk.set("logical-page-size", u32(4096))
-        disk.set("block-bits", u32(7))
-        disk.set("page-bits", u32(12))
+        disk.set("logical-page-size", u32(8192))
+        disk.set("block-bits", u32(8))
+        disk.set("page-bits", u32(13))
         disk.set("device-readid", b"\xad\xd5\x14\xb6\x44\x00\x00\x00")
         disk.set("dbg-chipids", b"\xad\xd5\x14\xb6\x44" + b"\x00" * 251)
         disk.set("ppn-device", u32(1))
@@ -655,8 +663,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("ppn-spec-version", u32(0x10002))
         disk.set("blocks-cau", u32(4096))
         disk.set("caus-ce", u32(1))
-        disk.set("slc-pages", u32(128))
-        disk.set("mlc-pages", u32(128))
+        disk.set("slc-pages", u32(256))
+        disk.set("mlc-pages", u32(256))
         disk.set("match-oddeven-caus", u32(0))
         disk.set("cau-bits", u32(1))
         disk.set("capabilities", u32(0x127))
