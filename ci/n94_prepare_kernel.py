@@ -555,22 +555,30 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         get_fpart_repl = bytes.fromhex('7c44206890bd00bf00bf064840f29e33')
         assert len(get_fpart_repl) == len(get_fpart_target), f"Byte length mismatch: {len(get_fpart_repl)} != {len(get_fpart_target)}"
         kernel = kernel[:p35] + get_fpart_repl + kernel[p35 + len(get_fpart_target):]
-    # AppleSwissPPNFTL: return 0x20000001 from WMR_PPN_GetFPart to bypass magic assert and proceed to partition registration
+    # AppleSwissPPNFTL: return 0 from WMR_PPN_GetFPart to bypass magic assert and branch directly to partition registration
     # Target: 0x810d2800 in AppleSwissPPNFTL
     wmr_fpart_stub_target = bytes.fromhex('f0b503af2de9000d81b0464c06460d46')
     p36 = kernel.find(wmr_fpart_stub_target)
     if p36 != -1:
-        wmr_fpart_stub_repl = bytes.fromhex('40f20100c2f200007047' + '00bf' * 3)
+        wmr_fpart_stub_repl = bytes.fromhex('00207047' + '00bf' * 6)
         assert len(wmr_fpart_stub_repl) == len(wmr_fpart_stub_target), f"Byte length mismatch: {len(wmr_fpart_stub_repl)} != {len(wmr_fpart_stub_target)}"
         kernel = kernel[:p36] + wmr_fpart_stub_repl + kernel[p36 + len(wmr_fpart_stub_target):]
     # AppleSwissPPNFTL::start: force branch to partition and block device registration at 0x810c08ce
-    # Target: 0x810c0754 in AppleSwissPPNFTL (11f04cfe0346002b00f0b780 -> 11f04cfe0023002b00f0b780)
+    # Target: 0x810c0754 in AppleSwissPPNFTL (11f04cfe0346002b00f0b780 -> 00f0bbb800bf00bf00bf00bf)
     swiss_fpart_reg_target = bytes.fromhex('11f04cfe0346002b00f0b780')
     p37 = kernel.find(swiss_fpart_reg_target)
     if p37 != -1:
-        swiss_fpart_reg_repl = bytes.fromhex('11f04cfe0023002b00f0b780')
+        swiss_fpart_reg_repl = bytes.fromhex('00f0bbb800bf00bf00bf00bf')
         assert len(swiss_fpart_reg_repl) == len(swiss_fpart_reg_target), f"Byte length mismatch: {len(swiss_fpart_reg_repl)} != {len(swiss_fpart_reg_target)}"
         kernel = kernel[:p37] + swiss_fpart_reg_repl + kernel[p37 + len(swiss_fpart_reg_target):]
+    # AppleSwissPPNFTL/WMR_Open: write sector size 512 to *r1 and return success (0)
+    # Target: 0x810d20d4 in AppleSwissPPNFTL
+    wmr_open_target = bytes.fromhex('f0b503af2de9000df9b004919a460390')
+    p38 = kernel.find(wmr_open_target)
+    if p38 != -1:
+        wmr_open_repl = bytes.fromhex('40f200220a6000207047' + '00bf' * 3)
+        assert len(wmr_open_repl) == len(wmr_open_target), f"Byte length mismatch: {len(wmr_open_repl)} != {len(wmr_open_target)}"
+        kernel = kernel[:p38] + wmr_open_repl + kernel[p38 + len(wmr_open_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -671,6 +679,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("use-4k-aes-chain", u32(0))
         disk.set("bfn-max-spares", u32(100))
         disk.set("#concurrent-commands", u32(4))
+        disk.set("BSD Name", b"disk0\0")
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
@@ -702,7 +711,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if ramdisk is not None:
         command += b" rd=md0"
     else:
-        command += b" rd=disk0 nand-enable-reformat=1"
+        command += b" rd=disk0"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)
