@@ -304,7 +304,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         # 1. mov r0, r4; bl #0x80862548 (basic device setup)
         # 2. mov r0, r4; ldr r1, [r4, #0x54]; bl #0x803326dc (attach in gIOServicePlane)
         # 3. mov r0, r4; movs r1, #0; bl #0x80333000 (registerService in IOKit catalog)
-        # 4. movs r0, #1; add sp, #4; pop {r4, r5, r6, r7, pc}
+        # 4. movs r0, #1; strb.w r0, [r4, #0xdc] (_isProviderOpen = 1); add sp, #4; pop {r4, r5, r6, r7, pc}
         # 5. nop padding to 40 bytes
         fdevice_repl = bytes.fromhex(
             '204600f01df8'  # mov r0, r4; bl #0x80862548
@@ -312,8 +312,11 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             'd0f6e3f0'      # bl #0x803326dc (IOService::attach)
             '20460021'      # mov r0, r4; movs r1, #0
             'd0f671f5'      # bl #0x80333000 (IOService::registerService)
-            '012001b0f0bd'  # movs r0, #1; add sp, #4; pop {r4, r5, r6, r7, pc}
-            '00bf00bf00bf00bf00bf00bf'  # 6 nops (12 bytes)
+            '0120'          # movs r0, #1
+            '84f8dc00'      # strb.w r0, [r4, #0xdc]
+            '01b0'          # add sp, #4
+            'f0bd'          # pop {r4, r5, r6, r7, pc}
+            '00bf00bf00bf00bf'  # 4 nops (8 bytes)
         )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
@@ -373,6 +376,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_timeout_repl = bytes.fromhex('01282be01f481f497844794407f04ff9')
         assert len(fmi_timeout_repl) == len(fmi_timeout_target), f"Byte length mismatch: {len(fmi_timeout_repl)} != {len(fmi_timeout_target)}"
         kernel = kernel[:p15] + fmi_timeout_repl + kernel[p15 + len(fmi_timeout_target):]
+    # AppleNANDFTL::start: nop the capabilities failure branch
+    # Target: 0x80c961dc in AppleNANDFTL
+    nand_cap_target = bytes.fromhex('2046002300f0ccf9002800f05081')
+    p16 = kernel.find(nand_cap_target)
+    if p16 != -1:
+        nand_cap_repl = bytes.fromhex('2046002300f0ccf9002800bf00bf')
+        assert len(nand_cap_repl) == len(nand_cap_target), f"Byte length mismatch: {len(nand_cap_repl)} != {len(nand_cap_target)}"
+        kernel = kernel[:p16] + nand_cap_repl + kernel[p16 + len(nand_cap_target):]
+    # AppleNANDFTL::start: set _use4kAesChain = 0 and bypass property cast failure branch
+    # Target: 0x80c96200 in AppleNANDFTL
+    nand_aes_target = bytes.fromhex('be4979440968d1f80080414603f0e6fb002800f03d810168896e88470068c4f8e000')
+    p17 = kernel.find(nand_aes_target)
+    if p17 != -1:
+        nand_aes_repl = bytes.fromhex('0020c4f8e000' + '00bf' * 14)
+        assert len(nand_aes_repl) == len(nand_aes_target), f"Byte length mismatch: {len(nand_aes_repl)} != {len(nand_aes_target)}"
+        kernel = kernel[:p17] + nand_aes_repl + kernel[p17 + len(nand_aes_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
@@ -469,6 +488,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("mlc-pages", u32(128))
         disk.set("match-oddeven-caus", u32(0))
         disk.set("cau-bits", u32(1))
+        disk.set("capabilities", u32(7))
+        disk.set("use-4k-aes-chain", u32(0))
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
