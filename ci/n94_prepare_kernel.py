@@ -603,6 +603,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         read_part_repl = bytes.fromhex('0123136000230b604ff62043c0f23e034b604bf203038b6001207047')
         assert len(read_part_repl) == len(read_part_target), f"Byte length mismatch: {len(read_part_repl)} != {len(read_part_target)}"
         kernel = kernel[:p41] + read_part_repl + kernel[p41 + len(read_part_target):]
+    # AppleSwissPPNFTL::readSectors: return success (0) instead of branching to NULL _ftl->read
+    # Target: 0x810c13d8 in AppleSwissPPNFTL
+    read_sectors_target = bytes.fromhex('f0b503af1c4615460e4611f0dbfd8368304629462246984700281cbf40f2d120cef20000')
+    p42 = kernel.find(read_sectors_target)
+    if p42 != -1:
+        read_sectors_repl = bytes.fromhex('00207047' + '00bf' * 16)
+        assert len(read_sectors_repl) == len(read_sectors_target), f"Byte length mismatch: {len(read_sectors_repl)} != {len(read_sectors_target)}"
+        kernel = kernel[:p42] + read_sectors_repl + kernel[p42 + len(read_sectors_target):]
+    # AppleSwissPPNFTL::writeSectors: return success (0) instead of branching to NULL _ftl->write
+    # Target: 0x810c1400 in AppleSwissPPNFTL
+    write_sectors_target = bytes.fromhex('f0b503af4df8048d984615460e4611f0c5fdc4693046bb6829464246a04700281cbf40f2')
+    p43 = kernel.find(write_sectors_target)
+    if p43 != -1:
+        write_sectors_repl = bytes.fromhex('00207047' + '00bf' * 16)
+        assert len(write_sectors_repl) == len(write_sectors_target), f"Byte length mismatch: {len(write_sectors_repl)} != {len(write_sectors_target)}"
+        kernel = kernel[:p43] + write_sectors_repl + kernel[p43 + len(write_sectors_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
