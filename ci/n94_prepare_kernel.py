@@ -450,12 +450,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         fmi_sync_repl = bytes.fromhex('98f8380100bf00244de0')
         assert len(fmi_sync_repl) == len(fmi_sync_target), f"Byte length mismatch: {len(fmi_sync_repl)} != {len(fmi_sync_target)}"
         kernel = kernel[:p23] + fmi_sync_repl + kernel[p23 + len(fmi_sync_target):]
-    # AppleIOPFMI::_fmiSendCommand: call _fmiPpnCompletion immediately instead of arming timeout timer
+    # AppleIOPFMI::_fmiSendCommand: mark command completed with kIOReturnSuccess instead of arming timeout timer
     # Target: 0x80e50914 in AppleIOPFMI
     fmi_send_target = bytes.fromhex('dbf8640070b160690168d1f8a01088476069dbf864100268526f904760690168496d8847002001b0bde8000df0bd')
     p24 = kernel.find(fmi_send_target)
     if p24 != -1:
-        fmi_send_repl = bytes.fromhex('2046fff74bfe002001b0bde8000df0bd' + '00bf' * 15)
+        fmi_send_repl = bytes.fromhex(
+            '0120'          # 0x80e50914: movs r0, #1
+            '0021'          # 0x80e50916: movs r1, #0
+            'c4f83c11'      # 0x80e50918: str.w r1, [r4, #0x13c] (status = 0)
+            '84f83801'      # 0x80e5091c: strb.w r0, [r4, #0x138] (completed = 1)
+            '0020'          # 0x80e50920: movs r0, #0 (kIOReturnSuccess)
+            '01b0'          # 0x80e50922: add sp, #4
+            'bde8000d'      # 0x80e50924: pop.w {r8, sl, fp}
+            'f0bd'          # 0x80e50928: pop {r4, r5, r6, r7, pc}
+            + '00bf' * 12   # 0x80e5092a - 0x80e50942: 24 bytes NOPs
+        )
         assert len(fmi_send_repl) == len(fmi_send_target), f"Byte length mismatch: {len(fmi_send_repl)} != {len(fmi_send_target)}"
         kernel = kernel[:p24] + fmi_send_repl + kernel[p24 + len(fmi_send_target):]
     # AppleSwissPPNFTL::start: force r8 = WMR_STATUS_SUCCESS (0x20000004) and nop failure branch
