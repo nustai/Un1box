@@ -11,6 +11,8 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "system/address-spaces.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
 #include "qemu/host-utils.h"
