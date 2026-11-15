@@ -206,10 +206,14 @@ class HFS:
         "/sbin/fsck",
         "/System/Library/Filesystems/hfs.fs/Contents/Resources/fsck_hfs",
         "/sbin/mount",
+        "/System/Library/Filesystems/hfs.fs/Contents/Resources/mount_hfs",
+        "/usr/libexec/mobile_obliterator",
+        "/usr/libexec/FinishRestoreFromBackup",
         "/usr/libexec/xpcproxy",
         "/usr/sbin/nvram",
         "/usr/libexec/tzinit",
         "/usr/libexec/sysstatuscheck",
+        "/usr/libexec/keybagd",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -277,6 +281,9 @@ class HFS:
                 if name == "fsck":
                     # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
                     uncompressed[0x2a34:0x2a3c] = bytes.fromhex("0020704700bf00bf")
+                elif name == "mobile_obliterator":
+                    # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
+                    uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
                 blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                 start_block = next_free_block
                 next_free_block += blocks_needed
@@ -308,6 +315,14 @@ class HFS:
                 raw.seek(rec_phys + 88)
                 raw.write(fork_data)
                 print(f"Uncompressed {name}: {len(uncompressed)} bytes at blocks {start_block}..{start_block+blocks_needed-1}", flush=True)
+
+            # Patch keybagd main to return 0 immediately (bypasses missing systembag.kb fatal reboot)
+            if "keybagd" in records:
+                _, rec, _ = records["keybagd"]
+                kb_start = struct.unpack_from(">I", rec, 88 + 16)[0]
+                raw.seek(kb_start * self.block + 0x166cc)
+                raw.write(bytes.fromhex("0020704700bf00bf"))
+                print(f"Patched keybagd at block {kb_start} + 0x166cc to exit 0", flush=True)
 
             # 5. Update volume headers
             for h_off in (1024, self.size - 1024):
