@@ -583,20 +583,20 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     dummy_pos = 0x0046d000 + (0x810ed000 - 0x804b7000)
     dummy_ftl = struct.pack('<I', 0x800681fd) * 32
     kernel = kernel[:dummy_pos] + dummy_ftl + kernel[dummy_pos + len(dummy_ftl):]
-    # WMR_PPN_GetFTL: return valid dummy FTL table (0x810ed000)
+    # WMR_PPN_GetFTL: return valid dummy FTL table (0x810ed000) and pop {r4, r7, pc}
     # Target: 0x810d2fa4 in AppleSwissPPNFTL
     get_ftl_target = bytes.fromhex('2068002818bf90bd06484ff463730649064a784479447a4409f0d0fb206890bd')
     p39 = kernel.find(get_ftl_target)
     if p39 != -1:
-        get_ftl_repl = bytes.fromhex('4df20000c8f20e107047' + '00bf' * 11)
+        get_ftl_repl = bytes.fromhex('4df20000c8f20e1090bd00bf' + '00bf' * 10)
         assert len(get_ftl_repl) == len(get_ftl_target), f"Byte length mismatch: {len(get_ftl_repl)} != {len(get_ftl_target)}"
         kernel = kernel[:p39] + get_ftl_repl + kernel[p39 + len(get_ftl_target):]
-    # WMR_PPN_GetVFL: return valid dummy VFL table (0x810ed000)
+    # WMR_PPN_GetVFL: return valid dummy VFL table (0x810ed000) and pop {r4, r7, pc}
     # Target: 0x810d2fdc in AppleSwissPPNFTL
     get_vfl_target = bytes.fromhex('2068002818bf90bd064840f295330649064a784479447a4409f0b4fb206890bd')
     p40 = kernel.find(get_vfl_target)
     if p40 != -1:
-        get_vfl_repl = bytes.fromhex('4df20000c8f20e107047' + '00bf' * 11)
+        get_vfl_repl = bytes.fromhex('4df20000c8f20e1090bd00bf' + '00bf' * 10)
         assert len(get_vfl_repl) == len(get_vfl_target), f"Byte length mismatch: {len(get_vfl_repl)} != {len(get_vfl_target)}"
         kernel = kernel[:p40] + get_vfl_repl + kernel[p40 + len(get_vfl_target):]
     # AppleSwissPPNFTL::readPartitionTableFromNand: return 1 partition with 4127776 sectors (2.11 GB)
