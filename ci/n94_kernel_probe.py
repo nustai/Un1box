@@ -244,7 +244,15 @@ def probe(binary, bundle, output, seconds):
                         snapshot['fault_mapping'] = qmp('human-monitor-command', {
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                if log.exists() and log.stat().st_size > 8 << 20:
+                if sample % 10 == 0:
+                    try:
+                        qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
+                        framebuffer = (output / 'boot-framebuffer.raw').resolve()
+                        qmp('human-monitor-command', {'command-line':
+                                     f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
+                    except Exception:
+                        pass
+                if log.exists() and log.stat().st_size > 256 << 20:
                     break
                 if serial.exists() and b"panic(" in serial.read_bytes():
                     break
@@ -376,7 +384,7 @@ def main():
     args = parser.parse_args()
     for version in (2, 3):
         probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
-              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 180))
+              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 300))
 
 
 if __name__ == "__main__":

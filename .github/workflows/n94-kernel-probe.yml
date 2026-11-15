@@ -94,12 +94,12 @@ jobs:
             python3 ci/n94_rootfs.py n94-input.ipsw n94-rootfs-out --raw-volume n94-rootfs.raw
           fi
       - name: Capture actual guest execution
-        timeout-minutes: 12
+        timeout-minutes: 15
         env:
           N94_BREAKPOINT: ${{ inputs.breakpoint }}
           N94_FOLLOW_BREAKPOINT: ${{ inputs.follow_breakpoint }}
           N94_DIAGNOSTIC_CLCD_HANDOFF: ${{ inputs.diagnostic_clcd_handoff }}
-        run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 180
+        run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 200
       - name: Verify observed restore userspace
         if: inputs.diagnostic_no_secure_root && inputs.restore_ramdisk && inputs.breakpoint == ''
         run: python3 ci/n94_restore_evidence.py n94-images n94-traces
