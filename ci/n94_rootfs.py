@@ -215,10 +215,12 @@ class HFS:
         "/usr/libexec/sysstatuscheck",
         "/usr/libexec/keybagd",
         "/usr/libexec/cc_fips_test",
+        "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
+        "/usr/libexec/backboardd",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
-        folders, records = {}, {}
+        folders, records, candidates = {}, {}, []
         node_id = self.first_leaf
         while node_id:
             node = self.fork(self.catalog, node_id * self.node_size, self.node_size)
@@ -233,17 +235,7 @@ class HFS:
                 if kind == 1:
                     folders[cnid] = (parent, name)
                 elif kind == 2 and name in wanted:
-                    cat_logical = node_id * self.node_size
-                    cursor = 0
-                    for ext_idx in range(8):
-                        start, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
-                        size_bytes = count_blk * self.block
-                        if cursor <= cat_logical < cursor + size_bytes:
-                            phys_off = (start * self.block) + (cat_logical - cursor)
-                            rec_phys = phys_off + at + 2 + key_len
-                            records[name] = (rec_phys, rec, parent)
-                            break
-                        cursor += size_bytes
+                    candidates.append((node_id, at, key_len, parent, name, rec))
             node_id = struct.unpack_from(">I", node)[0]
 
         def folder_path(cnid):
@@ -252,6 +244,21 @@ class HFS:
                 cnid, name = folders[cnid]
                 parts.append(name)
             return tuple(reversed(parts))
+
+        for node_id, at, key_len, parent, name, rec in candidates:
+            p = folder_path(parent) + (name,)
+            if p in targets:
+                cat_logical = node_id * self.node_size
+                cursor = 0
+                for ext_idx in range(8):
+                    start, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                    size_bytes = count_blk * self.block
+                    if cursor <= cat_logical < cursor + size_bytes:
+                        phys_off = (start * self.block) + (cat_logical - cursor)
+                        rec_phys = phys_off + at + 2 + key_len
+                        records[name] = (rec_phys, rec, parent)
+                        break
+                    cursor += size_bytes
 
         next_free_block = 24878
         total_allocated = 0
@@ -291,6 +298,11 @@ class HFS:
                     # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
                     assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
                     uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
+                    # Patch 0x6446 (file off 0x2446): beq #0x64c8 (3fd0) -> nop (00bf)
+                    # Bypasses trap 0x16 failure on child daemon initialization
+                    if uncompressed[0x2446:0x2448] == bytes.fromhex("3fd0"):
+                        uncompressed[0x2446:0x2448] = bytes.fromhex("00bf")
+                        print("Patched xpcproxy 0x2446 to nop", flush=True)
                 blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                 start_block = next_free_block
                 next_free_block += blocks_needed
@@ -345,6 +357,110 @@ class HFS:
                 raw.seek(kb_start * self.block + 0x166cc)
                 raw.write(bytes.fromhex("0020704700bf00bf"))
                 print(f"Patched keybagd at block {kb_start} + 0x166cc to exit 0", flush=True)
+
+            # Patch SpringBoard setup check at 0x471fae to always bypass setup mode
+            if "SpringBoard" in records:
+                _, sb_rec, _ = records["SpringBoard"]
+                sb_start = struct.unpack_from(">I", sb_rec, 88 + 16)[0]
+                raw.seek(sb_start * self.block + 0x471fae)
+                cur_sb = raw.read(2)
+                if cur_sb == bytes.fromhex("21d0"):
+                    raw.seek(sb_start * self.block + 0x471fae)
+                    raw.write(bytes.fromhex("00bf"))
+                    print(f"Patched SpringBoard at block {sb_start} + 0x471fae to nop (bypass setup)", flush=True)
+
+            # Patch backboardd hasBlankedScreen store at 0x30e1e to always be false (movs r0, #0; nop)
+            if "backboardd" in records:
+                _, bb_rec, _ = records["backboardd"]
+                bb_start = struct.unpack_from(">I", bb_rec, 88 + 16)[0]
+                raw.seek(bb_start * self.block + 0x30e1e)
+                cur_bb = raw.read(4)
+                if cur_bb == bytes.fromhex("1ff064e8"):
+                    raw.seek(bb_start * self.block + 0x30e1e)
+                    raw.write(bytes.fromhex("002000bf"))
+                    print(f"Patched backboardd at block {bb_start} + 0x30e1e to force unblank", flush=True)
+
+            # Inject com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences (CNID 46705)
+            purple_plist = b"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>SetupDone</key>
+    <true/>
+    <key>SetupFinishedAllSteps</key>
+    <true/>
+</dict>
+</plist>"""
+            p_blocks = (len(purple_plist) + self.block - 1) // self.block
+            p_start_blk = next_free_block
+            next_free_block += p_blocks
+            total_allocated += p_blocks
+
+            # Write payload to raw volume
+            raw.seek(p_start_blk * self.block)
+            raw.write(purple_plist + b"\x00" * (p_blocks * self.block - len(purple_plist)))
+
+            # Update allocation bitmap
+            for blk in range(p_start_blk, p_start_blk + p_blocks):
+                byte_pos = self.block + (blk // 8)
+                bit_pos = 7 - (blk % 8)
+                raw.seek(byte_pos)
+                cur_b = raw.read(1)[0]
+                raw.seek(byte_pos)
+                raw.write(bytes([cur_b | (1 << bit_pos)]))
+
+            # Modify node 1871 in catalog B-Tree replacing com.apple.ProxiedCrashCopier.plist
+            cat_logical = 1871 * self.node_size
+            node_phys = None
+            cursor = 0
+            for ext_idx in range(8):
+                start_blk, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                size_bytes = count_blk * self.block
+                if cursor <= cat_logical < cursor + size_bytes:
+                    node_phys = (start_blk * self.block) + (cat_logical - cursor)
+                    break
+                cursor += size_bytes
+
+            if node_phys:
+                raw.seek(node_phys)
+                node = bytearray(raw.read(self.node_size))
+                recs_count = struct.unpack_from(">H", node, 10)[0]
+                offsets = [struct.unpack_from(">H", node, len(node) - 2 * (i + 1))[0] for i in range(recs_count)]
+                if recs_count >= 44:
+                    rec43_off = offsets[43]
+                    klen_old = struct.unpack_from(">H", node, rec43_off)[0]
+                    rec43_data = bytearray(node[rec43_off + 2 + klen_old : rec43_off + 2 + klen_old + 248])
+
+                    # Update data fork
+                    fork_data = struct.pack(">QIIII", len(purple_plist), p_blocks * self.block,
+                                            p_blocks, p_start_blk, p_blocks) + b"\x00" * 56
+                    rec43_data[88:168] = fork_data
+                    # Clear UF_COMPRESSED
+                    rec43_data[41] = rec43_data[41] & ~0x20
+
+                    new_name = "com.apple.purplebuddy.plist"
+                    new_name_utf16 = new_name.encode("utf-16-be")
+                    new_klen = 4 + 2 + len(new_name_utf16)
+                    new_key = struct.pack(">HIH", new_klen, 46705, len(new_name)) + new_name_utf16
+                    delta = klen_old - new_klen
+
+                    rec_last_end = offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0] + (248 if struct.unpack_from(">H", node, offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0])[0] in (1, 2) else 10)
+                    following_data = bytes(node[offsets[44] : rec_last_end])
+
+                    new_rec43 = new_key + bytes(rec43_data)
+                    node[rec43_off : rec43_off + len(new_rec43)] = new_rec43
+
+                    new_rec44_off = rec43_off + len(new_rec43)
+                    node[new_rec44_off : new_rec44_off + len(following_data)] = following_data
+                    node[new_rec44_off + len(following_data) : new_rec44_off + len(following_data) + delta] = b"\x00" * delta
+
+                    for i in range(44, recs_count):
+                        offsets[i] -= delta
+                        struct.pack_into(">H", node, len(node) - 2 * (i + 1), offsets[i])
+
+                    raw.seek(node_phys)
+                    raw.write(node)
+                    print("Injected com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences", flush=True)
 
             # 5. Update volume headers
             for h_off in (1024, self.size - 1024):
