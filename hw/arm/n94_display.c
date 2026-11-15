@@ -78,7 +78,16 @@ static void n94_display_update(void *opaque)
     N94DisplayState *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
 
-    uint32_t fb = (s->fb_base != 0) ? s->fb_base : s->boot_fb_base;
+    uint32_t fb = s->fb_base;
+    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
+        fb = s->storage[0x5048 / 4];
+    }
+    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
+        fb = s->storage[0x4048 / 4];
+    }
+    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
+        fb = s->boot_fb_base;
+    }
     if (!fb) {
         return;
     }
@@ -129,7 +138,7 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
         val = s->status | 0x01;
         break;
     case 0x10: /* Framebuffer Base PA */
-        val = s->fb_base;
+        val = (s->fb_base != 0) ? s->fb_base : s->boot_fb_base;
         break;
     case 0x14: /* Width strictly 640 */
         val = N94_DISPLAY_WIDTH;
@@ -142,6 +151,27 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
         break;
     case 0x20: /* Pixel format: 32-bit ARGB */
         val = 0x01;
+        break;
+    case 0x1038: /* DPCENAB */
+        val = s->storage[word_idx] ? s->storage[word_idx] : 0x00000201;
+        break;
+    case 0x5048: /* DPU0SRCBASE */
+        val = s->storage[word_idx] ? s->storage[word_idx] : s->boot_fb_base;
+        break;
+    case 0x5040: /* DPU0SRCFMT */
+        val = s->storage[word_idx];
+        break;
+    case 0x5044: /* DPU0SRCSIZE */
+        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
+        break;
+    case 0x504c: /* DPU0SRCPITCH */
+        val = s->storage[word_idx] ? s->storage[word_idx] : N94_DISPLAY_STRIDE;
+        break;
+    case 0x5060: /* Crop start */
+        val = s->storage[word_idx];
+        break;
+    case 0x5070: /* Crop end */
+        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
         break;
     default:
         val = s->storage[word_idx];
@@ -187,7 +217,21 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     case 0x10:
         s->fb_base = (uint32_t)value;
         break;
+    case 0x5048: /* DPU0SRCBASE */
+    case 0x4048: /* DPU1SRCBASE */
+        {
+            uint32_t base = (uint32_t)(value & ~0x3f);
+            if (base >= 0x80000000 && base < 0xa0000000) {
+                s->fb_base = base;
+                s->guest_configured = true;
+            }
+        }
+        break;
     default:
+        if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
+            s->fb_base = (uint32_t)value;
+            s->guest_configured = true;
+        }
         break;
     }
 }
@@ -196,7 +240,29 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
 {
     N94DisplayState *s = N94_DISPLAY(dev);
     s->boot_fb_base = address;
+    s->fb_base = address;
     s->guest_configured = false;
+
+    /* S5L8940 CLCD / AppleDisplayPipe default bootloader (iBoot) hardware state:
+     * DPCENAB (+0x1038): LCD enabled (bit 0) and DPU0 enabled (bit 9, 0x200).
+     * DPU0SRCFMT (+0x5040): 32-bit ARGB8888 (bits 8..10 = 0).
+     * DPU0SRCSIZE (+0x5044): 640 x 960 Retina.
+     * DPU0SRCBASE (+0x5048): Boot framebuffer PA (0x8fd00000).
+     * DPU0SRCPITCH (+0x504c): 2560 bytes stride (640 * 4).
+     * Crop start (+0x5060): (0, 0).
+     * Crop end (+0x5070): (640 << 16) | 960 (Width 640, Height 960).
+     * Timing registers (+0x205c, +0x2060, +0x2064): active LCD panel timing.
+     */
+    s->storage[0x1038 / 4] = 0x00000201;
+    s->storage[0x205c / 4] = 0x00000001;
+    s->storage[0x2060 / 4] = 0x00000001;
+    s->storage[0x2064 / 4] = 0x00000001;
+    s->storage[0x5040 / 4] = 0x00000000;
+    s->storage[0x5044 / 4] = (640 << 16) | 960;
+    s->storage[0x5048 / 4] = address;
+    s->storage[0x504c / 4] = N94_DISPLAY_STRIDE;
+    s->storage[0x5060 / 4] = 0x00000000;
+    s->storage[0x5070 / 4] = (640 << 16) | 960;
 }
 
 /* MMIO Region 1: 0x09200000:0x2000 (Overlay 0 / Subregion 1) */
@@ -215,6 +281,12 @@ static void n94_display_sub1_write(void *opaque, hwaddr offset, uint64_t value, 
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
     n94_display_trace(s->seen_sub1, offset, true, (uint32_t)value, "sub1");
     s->storage_sub1[word_idx] = (uint32_t)value;
+
+    /* If overlay / window 0 points to a new surface in guest RAM */
+    if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
+        s->fb_base = (uint32_t)value;
+        s->guest_configured = true;
+    }
 }
 
 /* MMIO Region 2: 0x09300000:0x1000 (Overlay 1 / Subregion 2) */
@@ -233,6 +305,12 @@ static void n94_display_sub2_write(void *opaque, hwaddr offset, uint64_t value, 
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB2_WORDS;
     n94_display_trace(s->seen_sub2, offset, true, (uint32_t)value, "sub2");
     s->storage_sub2[word_idx] = (uint32_t)value;
+
+    /* If overlay / window 1 points to a new surface in guest RAM */
+    if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
+        s->fb_base = (uint32_t)value;
+        s->guest_configured = true;
+    }
 }
 
 static const MemoryRegionOps n94_display_ops = {
@@ -318,6 +396,9 @@ static void n94_display_reset(DeviceState *dev)
     memset(s->seen_sub2, 0, sizeof(s->seen_sub2));
     qemu_irq_lower(s->vblank_irq[0]);
     qemu_irq_lower(s->vblank_irq[1]);
+    if (s->boot_fb_base) {
+        n94_display_set_boot_framebuffer(dev, s->boot_fb_base);
+    }
 }
 
 static void n94_display_class_init(ObjectClass *klass, const void *data)
