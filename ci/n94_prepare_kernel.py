@@ -329,12 +329,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
-    # kalloc: allow kalloc_large allocations during early boot / decmpfs decompression
-    # Target: 0x80024cf0 in XNU kalloc: ldrb.w r0, [sl, #0x14] -> movs r0, #1; nop
-    kalloc_target = bytes.fromhex('002972d09af814004df2fe22c0f23e0241f6dc11')
+    # kalloc: allow kalloc_large allocations during early boot / decmpfs decompression from kernel_map
+    # Target: 0x80024cec in XNU kalloc: ldrb.w r0, [sl, #0x14] -> movs r0, #1; nop
+    # and 0x80024d16: it hi; addhi.w r0, r1, #0x20 -> nop; nop; nop (keep kernel_map, never NULL kalloc_map)
+    kalloc_target = bytes.fromhex('002972d09af814004df2fe22c0f23e0241f6dc110028c0f243011cbf0120c0f204007a447944a042104688bf01f12000')
     p_kalloc = kernel.find(kalloc_target)
     if p_kalloc != -1:
-        kalloc_repl = bytes.fromhex('002972d0012000bf4df2fe22c0f23e0241f6dc11')
+        kalloc_repl = bytes.fromhex('002972d0012000bf4df2fe22c0f23e0241f6dc110028c0f243011cbf0120c0f204007a447944a042104600bf00bf00bf')
         assert len(kalloc_repl) == len(kalloc_target), f"Byte length mismatch: {len(kalloc_repl)} != {len(kalloc_target)}"
         kernel = kernel[:p_kalloc] + kalloc_repl + kernel[p_kalloc + len(kalloc_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
