@@ -338,6 +338,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         kalloc_repl = bytes.fromhex('002972d0012000bf4df2fe22c0f23e0241f6dc110028c0f243011cbf0120c0f204007a447944a042104600bf00bf00bf')
         assert len(kalloc_repl) == len(kalloc_target), f"Byte length mismatch: {len(kalloc_repl)} != {len(kalloc_target)}"
         kernel = kernel[:p_kalloc] + kalloc_repl + kernel[p_kalloc + len(kalloc_target):]
+    # AppleFSCompressionTypeZlib: stub OSMalloc and OSFree imports to return static buffer at 0x9fe00000
+    # Target: 0x8108c7a8 in AppleFSCompressionTypeZlib stubs
+    zlib_alloc_target = bytes.fromhex('104700bfe208000040f6440cc0f2000cfc44dcf800c0604740f6380cc0f2000cfc44dcf800c06047')
+    p_zlib = kernel.find(zlib_alloc_target)
+    if p_zlib != -1:
+        zlib_alloc_repl = bytes.fromhex('104700bfe2080000704700bf00bf00bf00bf00bf00bf00bf40f20000c9f6e070704700bf00bf00bf')
+        assert len(zlib_alloc_repl) == len(zlib_alloc_target), f"Byte length mismatch: {len(zlib_alloc_repl)} != {len(zlib_alloc_target)}"
+        kernel = kernel[:p_zlib] + zlib_alloc_repl + kernel[p_zlib + len(zlib_alloc_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
     # Target: 0x80e4d4bc in AppleIOPFMI
     fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')
