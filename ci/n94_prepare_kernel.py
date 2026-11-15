@@ -346,6 +346,16 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         zlib_alloc_repl = bytes.fromhex('104700bfe2080000704700bf00bf00bf00bf00bf00bf00bf40f20000c9f6e070704700bf00bf00bf')
         assert len(zlib_alloc_repl) == len(zlib_alloc_target), f"Byte length mismatch: {len(zlib_alloc_repl)} != {len(zlib_alloc_target)}"
         kernel = kernel[:p_zlib] + zlib_alloc_repl + kernel[p_zlib + len(zlib_alloc_target):]
+    # hfs_vnop_read: force standard uncompressed read path to bypass decmpfs/kext allocation
+    # Target: 0x80246f8c in XNU hfs_vnop_read:
+    # bl #0x80098964 (decmpfs_cnode_get_vnode_state); cmp r0, #0; bne.w #0x80247658
+    # -> bl #0x80098964; cmp r0, #0; b.w #0x80247658 (unconditional branch to standard uncompressed read)
+    hfs_read_target = bytes.fromhex('51f6eafc002840f06183')
+    p_hfs = kernel.find(hfs_read_target)
+    if p_hfs != -1:
+        hfs_read_repl = bytes.fromhex('51f6eafc002800f061bb')
+        assert len(hfs_read_repl) == len(hfs_read_target), f"Byte length mismatch: {len(hfs_read_repl)} != {len(hfs_read_target)}"
+        kernel = kernel[:p_hfs] + hfs_read_repl + kernel[p_hfs + len(hfs_read_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
     # Target: 0x80e4d4bc in AppleIOPFMI
     fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')

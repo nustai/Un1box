@@ -200,6 +200,112 @@ class HFS:
                     "head": self.fork(descriptor, 0, min(size, 64)).hex()}
         return files
 
+    def uncompress_executables(self, destination, paths=("/sbin/launchd", "/usr/lib/dyld")):
+        targets = {tuple(p.strip("/").split("/")): p for p in paths}
+        wanted = {parts[-1] for parts in targets}
+        folders, records = {}, {}
+        node_id = self.first_leaf
+        while node_id:
+            node = self.fork(self.catalog, node_id * self.node_size, self.node_size)
+            recs_count = struct.unpack_from(">H", node, 10)[0]
+            for i in range(recs_count):
+                at = struct.unpack_from(">H", node, len(node) - 2 * (i + 1))[0]
+                key_len, parent, count = struct.unpack_from(">HIH", node, at)
+                name = node[at + 8:at + 8 + count * 2].decode("utf-16-be")
+                rec = node[at + 2 + key_len:]
+                kind = struct.unpack_from(">H", rec)[0]
+                cnid = struct.unpack_from(">I", rec, 8)[0]
+                if kind == 1:
+                    folders[cnid] = (parent, name)
+                elif kind == 2 and name in wanted:
+                    cat_logical = node_id * self.node_size
+                    cursor = 0
+                    for ext_idx in range(8):
+                        start, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                        size_bytes = count_blk * self.block
+                        if cursor <= cat_logical < cursor + size_bytes:
+                            phys_off = (start * self.block) + (cat_logical - cursor)
+                            rec_phys = phys_off + at + 2 + key_len
+                            records[name] = (rec_phys, rec, parent)
+                            break
+                        cursor += size_bytes
+            node_id = struct.unpack_from(">I", node)[0]
+
+        def folder_path(cnid):
+            parts = []
+            while cnid != 2:
+                cnid, name = folders[cnid]
+                parts.append(name)
+            return tuple(reversed(parts))
+
+        next_free_block = 24878
+        total_allocated = 0
+        with destination.open("r+b") as raw:
+            for name in ("dyld", "launchd"):
+                if name not in records:
+                    continue
+                rec_phys, rec, parent = records[name]
+                p = folder_path(parent) + (name,)
+                if p not in targets:
+                    continue
+                owner_flags = rec[41]
+                if not (owner_flags & 0x20):
+                    continue  # already uncompressed
+                res_desc = rec[168:248]
+                res_size = struct.unpack_from(">Q", res_desc, 0)[0]
+                if not res_size:
+                    continue
+                res_data = self.fork(res_desc, 0, res_size)
+                data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
+                rdata = res_data[data_off:data_off + data_len]
+                num_chunks = struct.unpack_from("<I", rdata, 4)[0]
+                uncompressed = bytearray()
+                for i in range(num_chunks):
+                    offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
+                    uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
+                assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                blocks_needed = (len(uncompressed) + self.block - 1) // self.block
+                start_block = next_free_block
+                next_free_block += blocks_needed
+                total_allocated += blocks_needed
+
+                # 1. Write payload
+                padded = uncompressed + b"\x00" * (blocks_needed * self.block - len(uncompressed))
+                raw.seek(start_block * self.block)
+                raw.write(padded)
+
+                # 2. Update bitmap
+                for blk in range(start_block, start_block + blocks_needed):
+                    byte_pos = self.block + (blk // 8)
+                    bit_pos = 7 - (blk % 8)
+                    raw.seek(byte_pos)
+                    cur_b = raw.read(1)[0]
+                    raw.seek(byte_pos)
+                    raw.write(bytes([cur_b | (1 << bit_pos)]))
+
+                # 3. Update catalog ownerFlags (clear UF_COMPRESSED bit 0x20)
+                raw.seek(rec_phys + 41)
+                cur_flags = raw.read(1)[0]
+                raw.seek(rec_phys + 41)
+                raw.write(bytes([cur_flags & ~0x20]))
+
+                # 4. Update data_fork in catalog record
+                fork_data = struct.pack(">QIIII", len(uncompressed), blocks_needed * self.block,
+                                        blocks_needed, start_block, blocks_needed) + b"\x00" * 56
+                raw.seek(rec_phys + 88)
+                raw.write(fork_data)
+                print(f"Uncompressed {name}: {len(uncompressed)} bytes at blocks {start_block}..{start_block+blocks_needed-1}", flush=True)
+
+            # 5. Update volume headers
+            for h_off in (1024, self.size - 1024):
+                raw.seek(h_off + 48)
+                cur_free = struct.unpack(">I", raw.read(4))[0]
+                raw.seek(h_off + 48)
+                raw.write(struct.pack(">I", cur_free - total_allocated))
+                raw.seek(h_off + 52)
+                raw.write(struct.pack(">I", next_free_block))
+            raw.flush()
+
     def export(self, destination):
         if shutil.disk_usage(destination.parent).free < self.size + (512 << 20):
             raise ValueError("insufficient free space for the raw HFS volume")
@@ -216,6 +322,7 @@ class HFS:
                 completed += hi - lo
                 if completed // (128 << 20) != (completed - (hi - lo)) // (128 << 20):
                     print(f"Exported {completed >> 20} MiB of HFS data", flush=True)
+        self.uncompress_executables(destination)
         with destination.open("rb") as result:
             result.seek(1024)
             if result.read(2) not in (b"H+", b"HX"):
@@ -260,6 +367,16 @@ def main():
     if args.raw_volume:
         report["raw_volume_sha256"] = volume.export(args.raw_volume)
         report["raw_volume_path"] = str(args.raw_volume)
+        class _ExportedDisk:
+            def __init__(self, p):
+                self.file = p.open("rb")
+                self.size = p.stat().st_size
+            def read(self, off, l):
+                self.file.seek(off)
+                return self.file.read(l)
+        exported = _ExportedDisk(args.raw_volume)
+        report["files"] = HFS(exported).lookup(files.keys())
+        exported.file.close()
     (args.output / "n94-rootfs-inventory.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2), flush=True)
     crypto.file.close()
