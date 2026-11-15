@@ -329,6 +329,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         )
         assert len(fdevice_repl) == len(fdevice_target), f"Byte length mismatch: {len(fdevice_repl)} != {len(fdevice_target)}"
         kernel = kernel[:p8] + fdevice_repl + kernel[p8 + len(fdevice_target):]
+    # kalloc: allow kalloc_large allocations during early boot / decmpfs decompression
+    # Target: 0x80024cf0 in XNU kalloc: ldrb.w r0, [sl, #0x14] -> movs r0, #1; nop
+    kalloc_target = bytes.fromhex('002972d09af814004df2fe22c0f23e0241f6dc11')
+    p_kalloc = kernel.find(kalloc_target)
+    if p_kalloc != -1:
+        kalloc_repl = bytes.fromhex('002972d0012000bf4df2fe22c0f23e0241f6dc11')
+        assert len(kalloc_repl) == len(kalloc_target), f"Byte length mismatch: {len(kalloc_repl)} != {len(kalloc_target)}"
+        kernel = kernel[:p_kalloc] + kalloc_repl + kernel[p_kalloc + len(kalloc_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
     # Target: 0x80e4d4bc in AppleIOPFMI
     fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')
