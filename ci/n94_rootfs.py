@@ -214,6 +214,7 @@ class HFS:
         "/usr/libexec/tzinit",
         "/usr/libexec/sysstatuscheck",
         "/usr/libexec/keybagd",
+        "/usr/libexec/cc_fips_test",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -254,6 +255,7 @@ class HFS:
 
         next_free_block = 24878
         total_allocated = 0
+        exit0_fork = None
         with destination.open("r+b") as raw:
             for name in list(records.keys()):
                 if name not in records:
@@ -314,7 +316,22 @@ class HFS:
                                         blocks_needed, start_block, blocks_needed) + b"\x00" * 56
                 raw.seek(rec_phys + 88)
                 raw.write(fork_data)
+                if name == "fsck":
+                    exit0_fork = fork_data
                 print(f"Uncompressed {name}: {len(uncompressed)} bytes at blocks {start_block}..{start_block+blocks_needed-1}", flush=True)
+
+            # Assign exit-0 stub to tasks that have no data fork (e.g. cc_fips_test, FinishRestoreFromBackup)
+            if exit0_fork:
+                for stub_name in ("cc_fips_test", "FinishRestoreFromBackup"):
+                    if stub_name in records:
+                        rec_phys, rec, parent = records[stub_name]
+                        raw.seek(rec_phys + 41)
+                        cur_flags = raw.read(1)[0]
+                        raw.seek(rec_phys + 41)
+                        raw.write(bytes([cur_flags & ~0x20]))
+                        raw.seek(rec_phys + 88)
+                        raw.write(exit0_fork)
+                        print(f"Assigned exit-0 stub to {stub_name}", flush=True)
 
             # Patch keybagd main to return 0 immediately (bypasses missing systembag.kb fatal reboot)
             if "keybagd" in records:
