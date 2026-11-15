@@ -294,10 +294,6 @@ class HFS:
                     # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
                     uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
                 elif name == "xpcproxy":
-                    # Patch 0x5b80 (file off 0x1b80) to branch unconditionally to 0x5bfa: b #0x5bfa
-                    # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
-                    assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
-                    uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
                     # 1. Patch 0x5b80 (file off 0x1b80) to branch unconditionally to 0x5bfa: b #0x5bfa
                     # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
                     assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
