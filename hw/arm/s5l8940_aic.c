@@ -12,6 +12,7 @@
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/cpu.h"
 #include "system/address-spaces.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
@@ -272,8 +273,9 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
             qemu_irq_pulse(s->doorbell_out);
         }
         break;
-    case 0x800c: /* Direct Sector DMA: 1 = READ, 2 = WRITE */
-        if (value == 1 || value == 2) {
+    case 0x8000 ... 0x8014:
+        s->storage[word_idx] = (uint32_t)value;
+        if (offset == 0x800c && (value == 1 || value == 2)) {
             uint32_t lba = s->storage[0x8000 / 4];
             uint32_t dst_addr = s->storage[0x8004 / 4];
             uint32_t count = s->storage[0x8008 / 4];
@@ -308,18 +310,32 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
                 int64_t file_off = (int64_t)lba * 4096LL;
                 if (fseeko(s->raw_file, file_off, SEEK_SET) == 0) {
                     uint8_t sec_buf[4096];
+                    CPUState *cpu = current_cpu ? current_cpu : first_cpu;
                     for (uint32_t i = 0; i < count; i++) {
+                        vaddr cur_va = (vaddr)dst_addr + (vaddr)i * 4096;
                         hwaddr cur_pa = pa + (hwaddr)i * 4096;
                         if (value == 1) { /* READ */
                             size_t rb = fread(sec_buf, 1, 4096, s->raw_file);
                             if (rb < 4096) {
                                 memset(sec_buf + rb, 0, 4096 - rb);
                             }
-                            address_space_write(&address_space_memory, cur_pa,
-                                                MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                            int ret = -1;
+                            if (cpu) {
+                                ret = cpu_memory_rw_debug(cpu, cur_va, sec_buf, 4096, 1);
+                            }
+                            if (ret != 0) {
+                                address_space_write(&address_space_memory, cur_pa,
+                                                    MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                            }
                         } else { /* WRITE */
-                            address_space_read(&address_space_memory, cur_pa,
-                                               MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                            int ret = -1;
+                            if (cpu) {
+                                ret = cpu_memory_rw_debug(cpu, cur_va, sec_buf, 4096, 0);
+                            }
+                            if (ret != 0) {
+                                address_space_read(&address_space_memory, cur_pa,
+                                                   MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                            }
                             fwrite(sec_buf, 1, 4096, s->raw_file);
                         }
                     }
@@ -331,6 +347,9 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
             } else {
                 s->storage[0x8010 / 4] = 1; /* STATUS = ERROR */
             }
+            qemu_log_mask(LOG_UNIMP, "n94 AIC DMA cmd=%u lba=%u dst=0x%08x count=%u file=%s\n",
+                          (uint32_t)value, lba, dst_addr, count,
+                          s->raw_file ? "open" : "FAILED");
         }
         return;
     default:

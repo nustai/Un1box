@@ -646,6 +646,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         swiss_quiesce_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf')
         assert len(swiss_quiesce_repl) == len(swiss_quiesce_target), f"Byte length mismatch: {len(swiss_quiesce_repl)} != {len(swiss_quiesce_target)}"
         kernel = kernel[:p44] + swiss_quiesce_repl + kernel[p44 + len(swiss_quiesce_target):]
+    # IOStorage::strategy (0x80811b88): direct hardware DMA strategy hook for disk0
+    # Intercepts bdevsw[1].d_strategy, streams sectors directly from n94-rootfs.raw via AIC DMA, and completes via biodone(bp)
+    strategy_target = bytes.fromhex('f0b503af2de9000da0b06c466ff30204a54644f2f6558846c0f2000583467d44b8f1000f2d682d681f9505d00020cbf80800dbf8000006e05846002103f0f8fb584603f0ddfbe04c20f07f427c4461684b689342')
+    p45 = kernel.find(strategy_target)
+    if p45 != -1:
+        strategy_repl = bytes.fromhex('d0f87c10d0f83c20d0f830301b0b08bf01234ff2840cc8f23f0cdcf800c00cf5004cccf80010ccf80420ccf80830d0f8201011f0010f14bf01210221ccf80c100021c0f82c10c0f834104bf25d1cc8f20d0c6047')
+        assert len(strategy_repl) == len(strategy_target), f"Byte length mismatch: {len(strategy_repl)} != {len(strategy_target)}"
+        kernel = kernel[:p45] + strategy_repl + kernel[p45 + len(strategy_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
