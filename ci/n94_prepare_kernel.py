@@ -623,6 +623,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         write_sectors_repl = bytes.fromhex('00207047' + '00bf' * 16)
         assert len(write_sectors_repl) == len(write_sectors_target), f"Byte length mismatch: {len(write_sectors_repl)} != {len(write_sectors_target)}"
         kernel = kernel[:p43] + write_sectors_repl + kernel[p43 + len(write_sectors_target):]
+    # AppleSwissPPNFTL::flush/quiesce: return success (0) immediately instead of looping on empty queue
+    # Target: 0x810c1430 in AppleSwissPPNFTL
+    swiss_quiesce_target = bytes.fromhex('90b501af044611f0b1fd406a8047')
+    p44 = kernel.find(swiss_quiesce_target)
+    if p44 != -1:
+        swiss_quiesce_repl = bytes.fromhex('0020704700bf00bf00bf00bf00bf')
+        assert len(swiss_quiesce_repl) == len(swiss_quiesce_target), f"Byte length mismatch: {len(swiss_quiesce_repl)} != {len(swiss_quiesce_target)}"
+        kernel = kernel[:p44] + swiss_quiesce_repl + kernel[p44 + len(swiss_quiesce_target):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
