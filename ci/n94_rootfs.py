@@ -200,7 +200,17 @@ class HFS:
                     "head": self.fork(descriptor, 0, min(size, 64)).hex()}
         return files
 
-    def uncompress_executables(self, destination, paths=("/sbin/launchd", "/usr/lib/dyld")):
+    def uncompress_executables(self, destination, paths=(
+        "/sbin/launchd",
+        "/usr/lib/dyld",
+        "/sbin/fsck",
+        "/System/Library/Filesystems/hfs.fs/Contents/Resources/fsck_hfs",
+        "/sbin/mount",
+        "/usr/libexec/xpcproxy",
+        "/usr/sbin/nvram",
+        "/usr/libexec/tzinit",
+        "/usr/libexec/sysstatuscheck",
+    )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
         folders, records = {}, {}
@@ -241,7 +251,7 @@ class HFS:
         next_free_block = 24878
         total_allocated = 0
         with destination.open("r+b") as raw:
-            for name in ("dyld", "launchd"):
+            for name in list(records.keys()):
                 if name not in records:
                     continue
                 rec_phys, rec, parent = records[name]
@@ -264,6 +274,9 @@ class HFS:
                     offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
                     uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
                 assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                if name == "fsck":
+                    # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
+                    uncompressed[0x2a34:0x2a3c] = bytes.fromhex("0020704700bf00bf")
                 blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                 start_block = next_free_block
                 next_free_block += blocks_needed
