@@ -356,6 +356,16 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         hfs_read_repl = bytes.fromhex('51f6eafc002800f061bb')
         assert len(hfs_read_repl) == len(hfs_read_target), f"Byte length mismatch: {len(hfs_read_repl)} != {len(hfs_read_target)}"
         kernel = kernel[:p_hfs] + hfs_read_repl + kernel[p_hfs + len(hfs_read_target):]
+    # zone_virtual_addr: bypass zone security/poisoning check to avoid panic on non-tagged pages
+    # Target: 0x800b9a48 in XNU zone_virtual_addr:
+    # asrs r1, r1, #1; cmp r1, #1; bne.n #0x800b9ad8
+    # -> asrs r1, r1, #1; cmp r1, #1; b.n #0x800b9ad8 (always return virtual address directly)
+    zp_target = bytes.fromhex('4910012944d1')
+    p_zp = kernel.find(zp_target)
+    if p_zp != -1:
+        zp_repl = bytes.fromhex('4910012944e0')
+        assert len(zp_repl) == len(zp_target), f"Byte length mismatch: {len(zp_repl)} != {len(zp_target)}"
+        kernel = kernel[:p_zp] + zp_repl + kernel[p_zp + len(zp_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
     # Target: 0x80e4d4bc in AppleIOPFMI
     fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')
@@ -807,7 +817,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     cooked_dt = dt.encode()
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
-    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1"
+    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 -no-zp"
     if diagnostic_single_cpu:
         command += b" cpus=1"
     if ramdisk is not None:
