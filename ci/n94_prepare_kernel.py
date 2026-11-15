@@ -229,12 +229,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.AppleNANDConfigAccess',
         b'com.apple.driver.EmbeddedIOP',
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
-        b'com.apple.iokit.IOMobileGraphicsFamily',
-        b'com.apple.iokit.IOSurface',
-        b'com.apple.driver.AppleM2ScalerCSCDriver',
-        b'com.apple.driver.AppleSamsungMIPIDSI',
-        b'com.apple.driver.AppleH4PCLCD',
-        b'com.apple.driver.ApplePinotLCD',
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
     replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
@@ -242,9 +236,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         target = b'<key>CFBundleIdentifier</key><string>' + kext_id + b'</string>'
         pos = kernel.find(target)
         if pos != -1:
-            dstart = kernel.rfind(b'<dict><key>CFBundleName</key>', 0, pos)
-            if dstart == -1:
-                dstart = kernel.rfind(b'<dict>', 0, pos)
+            dstart = kernel.rfind(b'<dict>', 0, pos)
             dend = kernel.find(b'</dict></dict>', pos)
             dtsdk_pos = kernel.find(dtsdk, dstart, dend)
             if dtsdk_pos != -1:
