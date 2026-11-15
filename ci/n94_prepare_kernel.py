@@ -607,20 +607,35 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         read_part_repl = bytes.fromhex('0123136000230b604df68473c0f207034b604bf203038b6001207047')
         assert len(read_part_repl) == len(read_part_target), f"Byte length mismatch: {len(read_part_repl)} != {len(read_part_target)}"
         kernel = kernel[:p41] + read_part_repl + kernel[p41 + len(read_part_target):]
-    # AppleSwissPPNFTL::readSectors: return success (0) instead of branching to NULL _ftl->read
+    # AppleSwissPPNFTL::readSectors: direct DMA read via AIC MMIO (offset 0x8000)
     # Target: 0x810c13d8 in AppleSwissPPNFTL
     read_sectors_target = bytes.fromhex('f0b503af1c4615460e4611f0dbfd8368304629462246984700281cbf40f2d120cef20000')
     p42 = kernel.find(read_sectors_target)
     if p42 != -1:
-        read_sectors_repl = bytes.fromhex('00207047' + '00bf' * 16)
+        # Thumb-2 implementation:
+        # ldr.w r0, [r0, #0x1a4]  ; r0 = buffer address in RAM
+        # movw r3, #0xf084
+        # movt r3, #0x803f        ; r3 = 0x803ff084 (holds AIC virtual base 0xc035a000)
+        # ldr r3, [r3]            ; r3 = aic_base
+        # add.w r3, r3, #0x8000   ; r3 = aic_base + 0x8000
+        # str r1, [r3]            ; [aic + 0x8000] = lba
+        # str r0, [r3, #4]        ; [aic + 0x8004] = dst_addr
+        # str r2, [r3, #8]        ; [aic + 0x8008] = count
+        # movs r0, #1
+        # str r0, [r3, #12]       ; [aic + 0x800c] = 1 (CMD_READ)
+        # movs r0, #0             ; return 0 (kIOReturnSuccess)
+        # bx lr
+        # nop; nop
+        read_sectors_repl = bytes.fromhex('d0f8a4014ff28403c8f23f031b6803f50043196058609a600120d8600020704700bf00bf')
         assert len(read_sectors_repl) == len(read_sectors_target), f"Byte length mismatch: {len(read_sectors_repl)} != {len(read_sectors_target)}"
         kernel = kernel[:p42] + read_sectors_repl + kernel[p42 + len(read_sectors_target):]
-    # AppleSwissPPNFTL::writeSectors: return success (0) instead of branching to NULL _ftl->write
+    # AppleSwissPPNFTL::writeSectors: direct DMA write via AIC MMIO (offset 0x8000)
     # Target: 0x810c1400 in AppleSwissPPNFTL
     write_sectors_target = bytes.fromhex('f0b503af4df8048d984615460e4611f0c5fdc4693046bb6829464246a04700281cbf40f2')
     p43 = kernel.find(write_sectors_target)
     if p43 != -1:
-        write_sectors_repl = bytes.fromhex('00207047' + '00bf' * 16)
+        # Thumb-2 implementation: CMD_WRITE (2)
+        write_sectors_repl = bytes.fromhex('d0f8a4014ff28403c8f23f031b6803f50043196058609a600220d8600020704700bf00bf')
         assert len(write_sectors_repl) == len(write_sectors_target), f"Byte length mismatch: {len(write_sectors_repl)} != {len(write_sectors_target)}"
         kernel = kernel[:p43] + write_sectors_repl + kernel[p43 + len(write_sectors_target):]
     # AppleSwissPPNFTL::flush/quiesce: return success (0) immediately instead of looping on empty queue

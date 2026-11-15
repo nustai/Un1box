@@ -52,6 +52,8 @@ struct S5L8940AICState {
     bool timer0_enabled;
     bool timer0_pending;
     uint32_t timer0_count;
+    char *nand_path;
+    FILE *raw_file;
 };
 
 static void s5l8940_aic_update(S5L8940AICState *s)
@@ -268,6 +270,67 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
             qemu_irq_pulse(s->doorbell_out);
         }
         break;
+    case 0x800c: /* Direct Sector DMA: 1 = READ, 2 = WRITE */
+        if (value == 1 || value == 2) {
+            uint32_t lba = s->storage[0x8000 / 4];
+            uint32_t dst_addr = s->storage[0x8004 / 4];
+            uint32_t count = s->storage[0x8008 / 4];
+            if (count == 0) {
+                count = 1;
+            }
+            hwaddr pa = dst_addr;
+            if (pa >= 0xc0000000U && pa < 0xe0000000U) {
+                pa -= 0x40000000U;
+            }
+            if (!s->raw_file) {
+                if (s->nand_path) {
+                    s->raw_file = fopen(s->nand_path, "r+b");
+                    if (!s->raw_file) {
+                        s->raw_file = fopen(s->nand_path, "rb");
+                    }
+                }
+                if (!s->raw_file) {
+                    s->raw_file = fopen("n94-rootfs.raw", "r+b");
+                    if (!s->raw_file) {
+                        s->raw_file = fopen("n94-rootfs.raw", "rb");
+                    }
+                }
+                if (!s->raw_file) {
+                    s->raw_file = fopen("n94-rootfs-out/n94-rootfs.raw", "r+b");
+                    if (!s->raw_file) {
+                        s->raw_file = fopen("n94-rootfs-out/n94-rootfs.raw", "rb");
+                    }
+                }
+            }
+            if (s->raw_file) {
+                int64_t file_off = (int64_t)lba * 4096LL;
+                if (fseeko(s->raw_file, file_off, SEEK_SET) == 0) {
+                    uint8_t sec_buf[4096];
+                    for (uint32_t i = 0; i < count; i++) {
+                        hwaddr cur_pa = pa + (hwaddr)i * 4096;
+                        if (value == 1) { /* READ */
+                            size_t rb = fread(sec_buf, 1, 4096, s->raw_file);
+                            if (rb < 4096) {
+                                memset(sec_buf + rb, 0, 4096 - rb);
+                            }
+                            address_space_write(&address_space_memory, cur_pa,
+                                                MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                        } else { /* WRITE */
+                            address_space_read(&address_space_memory, cur_pa,
+                                               MEMTXATTRS_UNSPECIFIED, sec_buf, 4096);
+                            fwrite(sec_buf, 1, 4096, s->raw_file);
+                        }
+                    }
+                    if (value == 2) {
+                        fflush(s->raw_file);
+                    }
+                }
+                s->storage[0x8010 / 4] = 0; /* STATUS = SUCCESS */
+            } else {
+                s->storage[0x8010 / 4] = 1; /* STATUS = ERROR */
+            }
+        }
+        return;
     default:
         break;
     }
@@ -331,14 +394,24 @@ static void s5l8940_aic_reset(DeviceState *dev)
     s->timer0_count = 0;
     s->timer0_enabled = false;
     s->timer0_pending = false;
+    if (s->raw_file) {
+        fclose(s->raw_file);
+        s->raw_file = NULL;
+    }
     memset(s->enabled, 0, sizeof(s->enabled));
     memset(s->pending, 0, sizeof(s->pending));
     s5l8940_aic_update(s);
 }
 
+static const Property s5l8940_aic_properties[] = {
+    DEFINE_PROP_STRING("nand", S5L8940AICState, nand_path),
+};
+
 static void s5l8940_aic_class_init(ObjectClass *klass, const void *data)
 {
-    device_class_set_legacy_reset(DEVICE_CLASS(klass), s5l8940_aic_reset);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    device_class_set_legacy_reset(dc, s5l8940_aic_reset);
+    device_class_set_props(dc, s5l8940_aic_properties);
 }
 
 static const TypeInfo s5l8940_aic_info = {

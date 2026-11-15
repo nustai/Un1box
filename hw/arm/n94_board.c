@@ -318,6 +318,7 @@ static void n94_init(MachineState *machine)
 
     if (s->nand_path) {
         qdev_prop_set_string(s->soc.iop, "nand", s->nand_path);
+        qdev_prop_set_string(s->soc.aic, "nand", s->nand_path);
     }
     if (s->nand_overlay_path) {
         qdev_prop_set_string(s->soc.iop, "nand-overlay", s->nand_overlay_path);
