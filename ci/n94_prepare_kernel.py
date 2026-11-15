@@ -674,11 +674,11 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         assert len(swiss_quiesce_repl) == len(swiss_quiesce_target), f"Byte length mismatch: {len(swiss_quiesce_repl)} != {len(swiss_quiesce_target)}"
         kernel = kernel[:p44] + swiss_quiesce_repl + kernel[p44 + len(swiss_quiesce_target):]
     # IOStorage::strategy (0x80811b88): direct hardware DMA strategy hook for disk0
-    # Intercepts bdevsw[1].d_strategy, streams sectors directly from n94-rootfs.raw via AIC DMA, and completes via biodone(bp)
-    strategy_target = bytes.fromhex('f0b503af2de9000da0b06c466ff30204a54644f2f6558846c0f2000583467d44b8f1000f2d682d681f9505d00020cbf80800dbf8000006e05846002103f0f8fb584603f0ddfbe04c20f07f427c4461684b689342')
+    # Intercepts bdevsw[1].d_strategy, maps cluster/UPL buffers via buf_map, streams sectors via AIC DMA, and completes via biodone(bp)
+    strategy_target = bytes.fromhex('f0b503af2de9000da0b06c466ff30204a54644f2f6558846c0f2000583467d44b8f1000f2d682d681f9505d00020cbf80800dbf8000006e05846002103f0f8fb584603f0ddfbe04c20f07f427c4461684b6893420fd9096800f03f009209c0ebc00051f82210')
     p45 = kernel.find(strategy_target)
     if p45 != -1:
-        strategy_repl = bytes.fromhex('d0f84810d0f83c20d0f830301b0b08bf01234ff2840cc8f23f0cdcf800c00cf5004cccf80010ccf80420ccf80830d0f8201011f0010f14bf01210221ccf80c100021c0f82810c0f834104bf25d1cc8f20d0c6047')
+        strategy_repl = bytes.fromhex('10b582b004466946c9f4b6f0009ad4f84810d4f830301b0b08bf01234ff2840cc8f23f0cdcf800c00cf5004cccf80010ccf80420ccf80830d4f8201011f0010f14bf01210221ccf80c100021c4f82810c4f834102046c9f4b9f02046c9f4baf202b010bd00bf')
         assert len(strategy_repl) == len(strategy_target), f"Byte length mismatch: {len(strategy_repl)} != {len(strategy_target)}"
         kernel = kernel[:p45] + strategy_repl + kernel[p45 + len(strategy_target):]
     segments, entry = macho(kernel)
