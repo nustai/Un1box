@@ -298,26 +298,11 @@ class HFS:
                     # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
                     assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
                     uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
-                    # 2. Patch 0x5d5e (file off 0x1d5e): beq #0x5d82 (10d0) -> b #0x5d82 (10e0)
-                    # Bypasses WorkingDirectory lookup failure (prevents 0x16 trap)
-                    if uncompressed[0x1d5e:0x1d60] == bytes.fromhex("10d0"):
-                        uncompressed[0x1d5e:0x1d60] = bytes.fromhex("10e0")
-                    # 3. Patch 0x5d92 (file off 0x1d92): beq #0x5e16 (40d0) -> b #0x5e16 (40e0)
-                    # Bypasses RootDirectory lookup failure (prevents 0x16 trap)
-                    if uncompressed[0x1d92:0x1d94] == bytes.fromhex("40d0"):
-                        uncompressed[0x1d92:0x1d94] = bytes.fromhex("40e0")
-                    # 4. Patch 0x5e3e (file off 0x1e3e): beq #0x5ec0 (40d0) -> b #0x5ec0 (40e0)
-                    # Bypasses StandardInPath lookup failure (prevents 0x16 trap)
-                    if uncompressed[0x1e3e:0x1e40] == bytes.fromhex("40d0"):
-                        uncompressed[0x1e3e:0x1e40] = bytes.fromhex("40e0")
-                    # 5. Patch 0x5eea (file off 0x1eea): beq #0x5f78 (45d0) -> b #0x5f78 (45e0)
-                    # Bypasses StandardOutPath lookup failure (prevents 0x16 trap)
-                    if uncompressed[0x1eea:0x1eec] == bytes.fromhex("45d0"):
-                        uncompressed[0x1eea:0x1eec] = bytes.fromhex("45e0")
-                    # 6-10. Patch validation checks at 0x2436, 0x2446, 0x244c, 0x245a, 0x2468 to nop (00bf)
-                    for chk_off in (0x2436, 0x2446, 0x244c, 0x245a, 0x2468):
-                        uncompressed[chk_off:chk_off+2] = bytes.fromhex("00bf")
-                    print("Patched xpcproxy with full child daemon spawn fix (10 patches)", flush=True)
+                    # 2. Patch 0x6436 (file off 0x2436) to branch unconditionally to 0x6478: b #0x6478
+                    # Bypasses POSIXSpawnType bitmask, leading-slash, and access checks, skipping 0x16 trap
+                    assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
+                    uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
+                    print("Patched xpcproxy with verified child daemon spawn fix (uid=0 + bypass 0x16 trap)", flush=True)
                 blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                 start_block = next_free_block
                 next_free_block += blocks_needed
