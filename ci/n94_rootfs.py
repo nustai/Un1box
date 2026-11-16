@@ -326,7 +326,7 @@ class HFS:
                     if len(launcher_payload) % 4 != 0:
                         launcher_payload.extend(b"\x00" * (4 - (len(launcher_payload) % 4)))
 
-                    if name in ("fsck", "DumpPanic", "CrashHousekeeping"):
+                    if name in ("tzinit", "sysstatuscheck", "fsck", "DumpPanic", "CrashHousekeeping"):
                         entry_off = None
                         try:
                             magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags = struct.unpack_from("<7I", uncompressed, 0)
