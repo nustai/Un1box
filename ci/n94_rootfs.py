@@ -219,6 +219,8 @@ class HFS:
         "/usr/libexec/backboardd",
         "/usr/libexec/logd",
         "/usr/libexec/mtmergeprops",
+        "/System/Library/LaunchDaemons/com.apple.nfsconf.plist",
+        "/System/Library/LaunchDaemons/com.apple.DumpPanic.plist",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -268,7 +270,21 @@ class HFS:
         with destination.open("r+b") as raw:
             for p, (rec_phys, rec, parent, name) in list(records.items()):
                 owner_flags = rec[41]
-                if owner_flags & 0x20:
+                if p == ("System", "Library", "LaunchDaemons", "com.apple.nfsconf.plist"):
+                    uncompressed = bytearray(plistlib.dumps({
+                        "Label": "com.apple.backboardd",
+                        "ProgramArguments": ["/usr/libexec/backboardd"],
+                        "RunAtLoad": True,
+                        "KeepAlive": True,
+                    }))
+                elif p == ("System", "Library", "LaunchDaemons", "com.apple.DumpPanic.plist"):
+                    uncompressed = bytearray(plistlib.dumps({
+                        "Label": "com.apple.SpringBoard",
+                        "ProgramArguments": ["/System/Library/CoreServices/SpringBoard.app/SpringBoard"],
+                        "RunAtLoad": True,
+                        "KeepAlive": True,
+                    }))
+                elif owner_flags & 0x20:
                     res_desc = rec[168:248]
                     res_size = struct.unpack_from(">Q", res_desc, 0)[0]
                     if not res_size:
@@ -293,11 +309,13 @@ class HFS:
                         # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
                         assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
                         uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
-                        # 2. Patch 0x6436 (file off 0x2436) to branch unconditionally to 0x6478: b #0x6478
-                        # Bypasses POSIXSpawnType bitmask, leading-slash, and access checks, skipping 0x16 trap
+                        # 2. Patch 0x6436 (file off 0x2436) to branch to 0x64c8: b #0x64c8
                         assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
-                        uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
-                        print("Patched xpcproxy with verified child daemon spawn fix (uid=0 + bypass 0x16 trap)", flush=True)
+                        uncompressed[0x2436:0x2438] = bytes.fromhex("47e0")
+                        # 3. Patch 0x64c8 (file off 0x24c8) to exit(0) immediately instead of trapping: movs r0, #0; blx #0x7e80
+                        assert uncompressed[0x24c8:0x24ce] == bytes.fromhex("012000210090"), "xpcproxy 0x24c8 mismatch"
+                        uncompressed[0x24c8:0x24ce] = bytes.fromhex("002001f0dcec")
+                        print("Patched xpcproxy (uid=0 root spawn + clean _exit(0) on trap)", flush=True)
 
                     blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                     start_block = next_free_block
