@@ -382,22 +382,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         vnode_isrd_repl = bytes.fromhex('0020704700bf00bf00bf00bf')
         assert len(vnode_isrd_repl) == len(vnode_isrd_target)
         kernel = kernel[:p_vnode_isrd] + vnode_isrd_repl + kernel[p_vnode_isrd + len(vnode_isrd_target):]
-    # hfs_write_chk1: bypass EROFS in hfs_vnop_create/mkdir
-    # Target: 0x802062a0: tst.w r0, #1; beq.n +0x1e -> nop; nop; b.n +0x1e
-    hfs_chk1_target = bytes.fromhex('10f0010f0fd0')
-    p_hfs_chk1 = kernel.find(hfs_chk1_target)
-    if p_hfs_chk1 != -1:
-        hfs_chk1_repl = bytes.fromhex('00bf00bf0fe0')
-        assert len(hfs_chk1_repl) == len(hfs_chk1_target)
-        kernel = kernel[:p_hfs_chk1] + hfs_chk1_repl + kernel[p_hfs_chk1 + len(hfs_chk1_target):]
-    # hfs_write_chk2: bypass EROFS in hfs_vnop_link
-    # Target: 0x80206318: tst.w r0, #1; beq.n +0x2a -> nop; nop; b.n +0x2a
-    hfs_chk2_target = bytes.fromhex('10f0010f15d0')
-    p_hfs_chk2 = kernel.find(hfs_chk2_target)
-    if p_hfs_chk2 != -1:
-        hfs_chk2_repl = bytes.fromhex('00bf00bf15e0')
-        assert len(hfs_chk2_repl) == len(hfs_chk2_target)
-        kernel = kernel[:p_hfs_chk2] + hfs_chk2_repl + kernel[p_hfs_chk2 + len(hfs_chk2_target):]
     # hfs_clear_ro: clear HFS_READ_ONLY on mount in hfs_mountfs
     # Target: 0x80207d06: orr.w r0, r0, #1; strb.w r0, [r11, #8] -> bic.w r0, r0, #1
     hfs_ro_target = bytes.fromhex('40f00100cbf80800')
@@ -857,7 +841,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     cooked_dt = dt.encode()
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
-    command = b"serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 -no-zp"
+    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 amfi_allow_any_signature=1 rootless=0 -no-zp"
     if diagnostic_single_cpu:
         command += b" cpus=1"
     if ramdisk is not None:
