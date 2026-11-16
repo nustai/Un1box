@@ -217,6 +217,8 @@ class HFS:
         "/usr/libexec/cc_fips_test",
         "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
         "/usr/libexec/backboardd",
+        "/usr/libexec/logd",
+        "/usr/libexec/mtmergeprops",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -256,7 +258,7 @@ class HFS:
                     if cursor <= cat_logical < cursor + size_bytes:
                         phys_off = (start * self.block) + (cat_logical - cursor)
                         rec_phys = phys_off + at + 2 + key_len
-                        records[name] = (rec_phys, rec, parent)
+                        records[p] = (rec_phys, rec, parent, name)
                         break
                     cursor += size_bytes
 
@@ -264,13 +266,7 @@ class HFS:
         total_allocated = 0
         exit0_fork = None
         with destination.open("r+b") as raw:
-            for name in list(records.keys()):
-                if name not in records:
-                    continue
-                rec_phys, rec, parent = records[name]
-                p = folder_path(parent) + (name,)
-                if p not in targets:
-                    continue
+            for p, (rec_phys, rec, parent, name) in list(records.items()):
                 owner_flags = rec[41]
                 if not (owner_flags & 0x20):
                     continue  # already uncompressed
@@ -303,6 +299,31 @@ class HFS:
                     assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
                     uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
                     print("Patched xpcproxy with verified child daemon spawn fix (uid=0 + bypass 0x16 trap)", flush=True)
+                elif name == "launchd":
+                    # 1. Patch 0x0f530 (file off 0xb530): b #0xf5f8 (62e0 replaces 0028)
+                    # Prevents any service from being marked 'not allowed to execute' (bit 0x800)
+                    assert uncompressed[0xb530:0xb532] == bytes.fromhex("0028"), "launchd 0xb530 mismatch"
+                    uncompressed[0xb530:0xb532] = bytes.fromhex("62e0")
+                    # 2. Patch 0x1cd1e (file off 0x18d1e): b #0x1cd2e (06e0 replaces 06d0)
+                    # Prevents RunAtLoad dispatcher from asserting/crashing on service errors (launchd + 101675: 0x10)
+                    assert uncompressed[0x18d1e:0x18d20] == bytes.fromhex("06d0"), "launchd 0x18d1e mismatch"
+                    uncompressed[0x18d1e:0x18d20] = bytes.fromhex("06e0")
+                    print("Patched launchd with verified RunAtLoad non-stop dispatch + allow-all execution", flush=True)
+                elif name == "SpringBoard" and p == ("System", "Library", "CoreServices", "SpringBoard.app", "SpringBoard"):
+                    # Patch SpringBoard setup check at 0x471fae to always bypass setup mode
+                    assert uncompressed[0x471fae:0x471fb0] == bytes.fromhex("21d0"), "SpringBoard 0x471fae mismatch"
+                    uncompressed[0x471fae:0x471fb0] = bytes.fromhex("00bf")
+                    print("Patched SpringBoard at 0x471fae to nop (bypass setup)", flush=True)
+                elif name == "backboardd":
+                    # Patch backboardd hasBlankedScreen store at 0x30e1e to always be false (movs r0, #0; nop)
+                    assert uncompressed[0x30e1e:0x30e22] == bytes.fromhex("1ff064e8"), "backboardd 0x30e1e mismatch"
+                    uncompressed[0x30e1e:0x30e22] = bytes.fromhex("002000bf")
+                    print("Patched backboardd at 0x30e1e to force unblank", flush=True)
+                elif name == "keybagd":
+                    # Patch keybagd main to return 0 immediately (bypasses missing systembag.kb fatal reboot)
+                    assert uncompressed[0x166cc:0x166d4] == bytes.fromhex("f0b503af2de90005"), "keybagd 0x166cc mismatch"
+                    uncompressed[0x166cc:0x166d4] = bytes.fromhex("0020704700bf00bf")
+                    print("Patched keybagd at 0x166cc to exit 0", flush=True)
                 blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                 start_block = next_free_block
                 next_free_block += blocks_needed
@@ -339,46 +360,19 @@ class HFS:
 
             # Assign exit-0 stub to tasks that have no data fork (e.g. cc_fips_test, FinishRestoreFromBackup)
             if exit0_fork:
-                for stub_name in ("cc_fips_test", "FinishRestoreFromBackup"):
-                    if stub_name in records:
-                        rec_phys, rec, parent = records[stub_name]
+                for stub_p in (
+                    ("usr", "libexec", "cc_fips_test"),
+                    ("usr", "libexec", "FinishRestoreFromBackup")
+                ):
+                    if stub_p in records:
+                        rec_phys, rec, parent, name = records[stub_p]
                         raw.seek(rec_phys + 41)
                         cur_flags = raw.read(1)[0]
                         raw.seek(rec_phys + 41)
                         raw.write(bytes([cur_flags & ~0x20]))
                         raw.seek(rec_phys + 88)
                         raw.write(exit0_fork)
-                        print(f"Assigned exit-0 stub to {stub_name}", flush=True)
-
-            # Patch keybagd main to return 0 immediately (bypasses missing systembag.kb fatal reboot)
-            if "keybagd" in records:
-                _, rec, _ = records["keybagd"]
-                kb_start = struct.unpack_from(">I", rec, 88 + 16)[0]
-                raw.seek(kb_start * self.block + 0x166cc)
-                raw.write(bytes.fromhex("0020704700bf00bf"))
-                print(f"Patched keybagd at block {kb_start} + 0x166cc to exit 0", flush=True)
-
-            # Patch SpringBoard setup check at 0x471fae to always bypass setup mode
-            if "SpringBoard" in records:
-                _, sb_rec, _ = records["SpringBoard"]
-                sb_start = struct.unpack_from(">I", sb_rec, 88 + 16)[0]
-                raw.seek(sb_start * self.block + 0x471fae)
-                cur_sb = raw.read(2)
-                if cur_sb == bytes.fromhex("21d0"):
-                    raw.seek(sb_start * self.block + 0x471fae)
-                    raw.write(bytes.fromhex("00bf"))
-                    print(f"Patched SpringBoard at block {sb_start} + 0x471fae to nop (bypass setup)", flush=True)
-
-            # Patch backboardd hasBlankedScreen store at 0x30e1e to always be false (movs r0, #0; nop)
-            if "backboardd" in records:
-                _, bb_rec, _ = records["backboardd"]
-                bb_start = struct.unpack_from(">I", bb_rec, 88 + 16)[0]
-                raw.seek(bb_start * self.block + 0x30e1e)
-                cur_bb = raw.read(4)
-                if cur_bb == bytes.fromhex("1ff064e8"):
-                    raw.seek(bb_start * self.block + 0x30e1e)
-                    raw.write(bytes.fromhex("002000bf"))
-                    print(f"Patched backboardd at block {bb_start} + 0x30e1e to force unblank", flush=True)
+                        print(f"Assigned exit-0 stub to {name}", flush=True)
 
             # Inject com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences (CNID 46705)
             purple_plist = b"""<?xml version="1.0" encoding="UTF-8"?>
