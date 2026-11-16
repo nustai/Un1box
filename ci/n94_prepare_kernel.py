@@ -841,7 +841,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     cooked_dt = dt.encode()
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
-    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 amfi_allow_any_signature=1 rootless=0 -no-zp"
+    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 -no-zp"
     if diagnostic_single_cpu:
         command += b" cpus=1"
     if ramdisk is not None:

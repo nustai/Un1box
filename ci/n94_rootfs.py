@@ -257,8 +257,8 @@ class HFS:
             return tuple(reversed(parts))
 
         for node_id, at, key_len, parent, name, rec in candidates:
-            if name in wanted:
-                p = folder_path(parent) + (name,)
+            p = folder_path(parent) + (name,)
+            if p in targets:
                 cat_logical = node_id * self.node_size
                 cursor = 0
                 for ext_idx in range(8):
