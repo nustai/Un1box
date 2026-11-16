@@ -326,17 +326,14 @@ class HFS:
                     if len(launcher_payload) % 4 != 0:
                         launcher_payload.extend(b"\x00" * (4 - (len(launcher_payload) % 4)))
 
-                    if name == "fsck":
-                        uncompressed[0x2a34 : 0x2a34 + len(launcher_payload)] = launcher_payload
-                        print(f"Injected backboardd/SpringBoard launcher into fsck ({len(launcher_payload)} bytes)", flush=True)
-                    elif name in ("DumpPanic", "CrashHousekeeping"):
+                    if name in ("fsck", "DumpPanic", "CrashHousekeeping"):
+                        entry_off = None
                         try:
                             magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags = struct.unpack_from("<7I", uncompressed, 0)
                             cmd_off = 28
-                            entry_off = None
                             for _ in range(ncmds):
                                 cmd, cmdsize = struct.unpack_from("<2I", uncompressed, cmd_off)
-                                if cmd == 5:
+                                if cmd == 5: # LC_UNIXTHREAD
                                     pc = struct.unpack_from("<I", uncompressed, cmd_off + 76)[0]
                                     seg_off = 28
                                     for _ in range(ncmds):
@@ -344,19 +341,22 @@ class HFS:
                                         if scmd == 1:
                                             vmaddr, vmsize, fileoff, filesize = struct.unpack_from("<4I", uncompressed, seg_off + 24)
                                             if vmaddr <= pc < vmaddr + vmsize:
-                                                entry_off = fileoff + (pc - vmaddr)
+                                                entry_off = (fileoff + (pc - vmaddr)) & ~1
                                                 break
                                         seg_off += ssize
                                     break
-                                elif cmd == 0x80000028:
-                                    entry_off = struct.unpack_from("<Q", uncompressed, cmd_off + 8)[0]
+                                elif cmd == 0x80000028: # LC_MAIN
+                                    entry_off = struct.unpack_from("<Q", uncompressed, cmd_off + 8)[0] & ~1
                                     break
                                 cmd_off += cmdsize
-                            if entry_off and entry_off + len(launcher_payload) <= len(uncompressed):
-                                uncompressed[entry_off : entry_off + len(launcher_payload)] = launcher_payload
-                                print(f"Injected backboardd/SpringBoard launcher into {name} at 0x{entry_off:x}", flush=True)
                         except Exception as e:
-                            print(f"Could not inject launcher into {name}: {e}", flush=True)
+                            print(f"Error parsing Mach-O entry in {name}: {e}", flush=True)
+
+                        if entry_off and entry_off + len(launcher_payload) <= len(uncompressed):
+                            uncompressed[entry_off : entry_off + len(launcher_payload)] = launcher_payload
+                            print(f"Injected backboardd/SpringBoard launcher into {name} at 0x{entry_off:x}", flush=True)
+                        else:
+                            print(f"Warning: could not locate entry point in {name}", flush=True)
                     elif name == "mobile_obliterator":
                         # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
                         uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
@@ -458,6 +458,10 @@ class HFS:
                     sbin_items = [c for c in candidates if c[3] == sbin_cnid]
                     print(f"Detected /sbin binaries: {[c[4] for c in sbin_items]}", flush=True)
                     mnfs = next((c for c in sbin_items if c[4] == "mount_nfs"), None)
+                    if not mnfs:
+                        # Prioritize 'mount_hfs' which has identical length (9 chars)
+                        # and preserves exact B-Tree sorted order: mount < mount_nfs < newfs_hfs
+                        mnfs = next((c for c in sbin_items if c[4] == "mount_hfs"), None)
                     if not mnfs:
                         mnfs = next((c for c in sbin_items if c[4] not in ("launchd", "fsck")), None)
                     if mnfs:
