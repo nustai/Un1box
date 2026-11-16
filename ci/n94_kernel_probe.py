@@ -146,8 +146,8 @@ def probe(binary, bundle, output, seconds):
                 gdb_command(f'Z0,{int(breakpoint_address, 0):x},2')
             qmp("cont")
             started = time.monotonic()
-            for sample in range(max(1, int(seconds / 2))):
-                time.sleep(0.25 if sample == 0 else 2)
+            for sample in range(max(1, int(seconds))):
+                time.sleep(0.25 if sample == 0 else 1)
                 if debugger is not None and qmp('query-status')['status'] == 'debug':
                     registers = qmp('human-monitor-command', {'command-line': 'info registers'})
                     match = re.search(r'R00=([0-9a-fA-F]{8})', registers)

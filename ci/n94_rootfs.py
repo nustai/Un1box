@@ -224,6 +224,10 @@ class HFS:
         "/usr/libexec/ptpd",
         "/usr/libexec/wifiFirmwareLoader",
         "/usr/sbin/mDNSResponder",
+        "/usr/sbin/cfprefsd",
+        "/usr/libexec/securityd",
+        "/usr/libexec/assertiond",
+        "/usr/libexec/mediaserverd",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -387,88 +391,6 @@ class HFS:
                         raw.seek(rec_phys + 88)
                         raw.write(exit0_fork)
                         print(f"Assigned exit-0 stub to {name}", flush=True)
-
-            # Inject com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences (CNID 46705)
-            purple_plist = b"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>SetupDone</key>
-    <true/>
-    <key>SetupFinishedAllSteps</key>
-    <true/>
-</dict>
-</plist>"""
-            p_blocks = (len(purple_plist) + self.block - 1) // self.block
-            p_start_blk = next_free_block
-            next_free_block += p_blocks
-            total_allocated += p_blocks
-
-            # Write payload to raw volume
-            raw.seek(p_start_blk * self.block)
-            raw.write(purple_plist + b"\x00" * (p_blocks * self.block - len(purple_plist)))
-
-            # Update allocation bitmap
-            for blk in range(p_start_blk, p_start_blk + p_blocks):
-                byte_pos = self.block + (blk // 8)
-                bit_pos = 7 - (blk % 8)
-                raw.seek(byte_pos)
-                cur_b = raw.read(1)[0]
-                raw.seek(byte_pos)
-                raw.write(bytes([cur_b | (1 << bit_pos)]))
-
-            # Modify node 1871 in catalog B-Tree replacing com.apple.ProxiedCrashCopier.plist
-            cat_logical = 1871 * self.node_size
-            node_phys = None
-            cursor = 0
-            for ext_idx in range(8):
-                start_blk, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
-                size_bytes = count_blk * self.block
-                if cursor <= cat_logical < cursor + size_bytes:
-                    node_phys = (start_blk * self.block) + (cat_logical - cursor)
-                    break
-                cursor += size_bytes
-
-            if node_phys:
-                raw.seek(node_phys)
-                node = bytearray(raw.read(self.node_size))
-                recs_count = struct.unpack_from(">H", node, 10)[0]
-                offsets = [struct.unpack_from(">H", node, len(node) - 2 * (i + 1))[0] for i in range(recs_count)]
-                if recs_count >= 44:
-                    rec43_off = offsets[43]
-                    klen_old = struct.unpack_from(">H", node, rec43_off)[0]
-                    rec43_data = bytearray(node[rec43_off + 2 + klen_old : rec43_off + 2 + klen_old + 248])
-
-                    # Update data fork
-                    fork_data = struct.pack(">QIIII", len(purple_plist), p_blocks * self.block,
-                                            p_blocks, p_start_blk, p_blocks) + b"\x00" * 56
-                    rec43_data[88:168] = fork_data
-                    # Clear UF_COMPRESSED
-                    rec43_data[41] = rec43_data[41] & ~0x20
-
-                    new_name = "com.apple.purplebuddy.plist"
-                    new_name_utf16 = new_name.encode("utf-16-be")
-                    new_klen = 4 + 2 + len(new_name_utf16)
-                    new_key = struct.pack(">HIH", new_klen, 46705, len(new_name)) + new_name_utf16
-                    delta = klen_old - new_klen
-
-                    rec_last_end = offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0] + (248 if struct.unpack_from(">H", node, offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0])[0] in (1, 2) else 10)
-                    following_data = bytes(node[offsets[44] : rec_last_end])
-
-                    new_rec43 = new_key + bytes(rec43_data)
-                    node[rec43_off : rec43_off + len(new_rec43)] = new_rec43
-
-                    new_rec44_off = rec43_off + len(new_rec43)
-                    node[new_rec44_off : new_rec44_off + len(following_data)] = following_data
-                    node[new_rec44_off + len(following_data) : new_rec44_off + len(following_data) + delta] = b"\x00" * delta
-
-                    for i in range(44, recs_count):
-                        offsets[i] -= delta
-                        struct.pack_into(">H", node, len(node) - 2 * (i + 1), offsets[i])
-
-                    raw.seek(node_phys)
-                    raw.write(node)
-                    print("Injected com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences", flush=True)
 
             # 5. Update volume headers
             for h_off in (1024, self.size - 1024):
