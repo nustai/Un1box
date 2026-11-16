@@ -272,14 +272,16 @@ class HFS:
                 owner_flags = rec[41]
                 if p == ("System", "Library", "LaunchDaemons", "com.apple.nfsconf.plist"):
                     uncompressed = bytearray(plistlib.dumps({
-                        "Label": "com.apple.backboardd",
+                        "Label": "com.apple.nfsconf",
+                        "Program": "/usr/libexec/backboardd",
                         "ProgramArguments": ["/usr/libexec/backboardd"],
                         "RunAtLoad": True,
                         "KeepAlive": True,
                     }))
                 elif p == ("System", "Library", "LaunchDaemons", "com.apple.DumpPanic.plist"):
                     uncompressed = bytearray(plistlib.dumps({
-                        "Label": "com.apple.SpringBoard",
+                        "Label": "com.apple.DumpPanic",
+                        "Program": "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
                         "ProgramArguments": ["/System/Library/CoreServices/SpringBoard.app/SpringBoard"],
                         "RunAtLoad": True,
                         "KeepAlive": True,
@@ -312,10 +314,10 @@ class HFS:
                         # 2. Patch 0x6436 (file off 0x2436) to branch to 0x64c8: b #0x64c8
                         assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
                         uncompressed[0x2436:0x2438] = bytes.fromhex("47e0")
-                        # 3. Patch 0x64c8 (file off 0x24c8) to exit(0) immediately instead of trapping: movs r0, #0; blx #0x7e80
+                        # 3. Patch 0x64c8 (file off 0x24c8) to exit(0) immediately via direct syscall: movs r0, #0; movs r7, #1; svc #0x80
                         assert uncompressed[0x24c8:0x24ce] == bytes.fromhex("012000210090"), "xpcproxy 0x24c8 mismatch"
-                        uncompressed[0x24c8:0x24ce] = bytes.fromhex("002001f0dcec")
-                        print("Patched xpcproxy (uid=0 root spawn + clean _exit(0) on trap)", flush=True)
+                        uncompressed[0x24c8:0x24ce] = bytes.fromhex("0020012780df")
+                        print("Patched xpcproxy (uid=0 root spawn + clean svc exit(0))", flush=True)
 
                     blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                     start_block = next_free_block
