@@ -219,6 +219,11 @@ class HFS:
         "/usr/libexec/backboardd",
         "/usr/libexec/logd",
         "/usr/libexec/mtmergeprops",
+        "/System/Library/CoreServices/DumpPanic",
+        "/System/Library/CoreServices/CrashHousekeeping",
+        "/usr/libexec/ptpd",
+        "/usr/libexec/wifiFirmwareLoader",
+        "/usr/sbin/mDNSResponder",
         "/System/Library/LaunchDaemons/com.apple.nfsconf.plist",
         "/System/Library/LaunchDaemons/com.apple.DumpPanic.plist",
     )):
@@ -238,7 +243,7 @@ class HFS:
                 cnid = struct.unpack_from(">I", rec, 8)[0]
                 if kind == 1:
                     folders[cnid] = (parent, name)
-                elif kind == 2 and name in wanted:
+                elif kind == 2:
                     candidates.append((node_id, at, key_len, parent, name, rec))
             node_id = struct.unpack_from(">I", node)[0]
 
@@ -300,9 +305,58 @@ class HFS:
                         offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
                         uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
                     assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                    launcher_payload = bytearray()
+                    # 0x00: mov.w r12, #2 (SYS_fork); svc #0x80; cmp r0, #0; bne 0x1c (parent_sb)
+                    launcher_payload.extend(bytes.fromhex("4ff0020c 80df 0028 08d1"))
+                    # 0x0a: Child 1 (backboardd):
+                    launcher_payload.extend(bytes.fromhex("0fa0 0022 05b4 6946 4ff03b0c 80df 0020 7047"))
+                    # 0x1c: parent_sb:
+                    launcher_payload.extend(bytes.fromhex("4ff0020c 80df 0028 0ed1"))
+                    # 0x26: Child 2 (SpringBoard): delay loop then execve
+                    launcher_payload.extend(bytes.fromhex("4ff6ff70 c0f24000 0138 fdd1"))
+                    launcher_payload.extend(bytes.fromhex("0ba0 0022 05b4 6946 4ff03b0c 80df 0020 7047"))
+                    # 0x44: parent_exit:
+                    launcher_payload.extend(bytes.fromhex("0020 7047"))
+                    if len(launcher_payload) % 4 != 0:
+                        launcher_payload.extend(b"\x00" * (4 - (len(launcher_payload) % 4)))
+                    launcher_payload.extend(b"/usr/libexec/backboardd\0")
+                    if len(launcher_payload) % 4 != 0:
+                        launcher_payload.extend(b"\x00" * (4 - (len(launcher_payload) % 4)))
+                    launcher_payload.extend(b"/System/Library/CoreServices/SpringBoard.app/SpringBoard\0")
+                    if len(launcher_payload) % 4 != 0:
+                        launcher_payload.extend(b"\x00" * (4 - (len(launcher_payload) % 4)))
+
                     if name == "fsck":
-                        # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
-                        uncompressed[0x2a34:0x2a3c] = bytes.fromhex("0020704700bf00bf")
+                        uncompressed[0x2a34 : 0x2a34 + len(launcher_payload)] = launcher_payload
+                        print(f"Injected backboardd/SpringBoard launcher into fsck ({len(launcher_payload)} bytes)", flush=True)
+                    elif name in ("DumpPanic", "CrashHousekeeping"):
+                        try:
+                            magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags = struct.unpack_from("<7I", uncompressed, 0)
+                            cmd_off = 28
+                            entry_off = None
+                            for _ in range(ncmds):
+                                cmd, cmdsize = struct.unpack_from("<2I", uncompressed, cmd_off)
+                                if cmd == 5:
+                                    pc = struct.unpack_from("<I", uncompressed, cmd_off + 76)[0]
+                                    seg_off = 28
+                                    for _ in range(ncmds):
+                                        scmd, ssize = struct.unpack_from("<2I", uncompressed, seg_off)
+                                        if scmd == 1:
+                                            vmaddr, vmsize, fileoff, filesize = struct.unpack_from("<4I", uncompressed, seg_off + 24)
+                                            if vmaddr <= pc < vmaddr + vmsize:
+                                                entry_off = fileoff + (pc - vmaddr)
+                                                break
+                                        seg_off += ssize
+                                    break
+                                elif cmd == 0x80000028:
+                                    entry_off = struct.unpack_from("<Q", uncompressed, cmd_off + 8)[0]
+                                    break
+                                cmd_off += cmdsize
+                            if entry_off and entry_off + len(launcher_payload) <= len(uncompressed):
+                                uncompressed[entry_off : entry_off + len(launcher_payload)] = launcher_payload
+                                print(f"Injected backboardd/SpringBoard launcher into {name} at 0x{entry_off:x}", flush=True)
+                        except Exception as e:
+                            print(f"Could not inject launcher into {name}: {e}", flush=True)
                     elif name == "mobile_obliterator":
                         # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
                         uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
@@ -397,6 +451,63 @@ class HFS:
                         raw.seek(rec_phys + 88)
                         raw.write(exit0_fork)
                         print(f"Assigned exit-0 stub to {name}", flush=True)
+
+                # Ensure /sbin/mount_nfs exists and points to exit0_fork launcher
+                sbin_cnid = next((cnid for cnid, (p, n) in folders.items() if p == 2 and n == "sbin"), None)
+                if sbin_cnid:
+                    sbin_items = [c for c in candidates if c[3] == sbin_cnid]
+                    print(f"Detected /sbin binaries: {[c[4] for c in sbin_items]}", flush=True)
+                    mnfs = next((c for c in sbin_items if c[4] == "mount_nfs"), None)
+                    if not mnfs:
+                        mnfs = next((c for c in sbin_items if c[4] not in ("launchd", "fsck")), None)
+                    if mnfs:
+                        m_node_id, m_at, m_klen, m_parent, m_name, m_rec = mnfs
+                        cat_logical = m_node_id * self.node_size
+                        cursor = 0
+                        node_phys = None
+                        for ext_idx in range(8):
+                            start, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                            sz = count_blk * self.block
+                            if cursor <= cat_logical < cursor + sz:
+                                node_phys = (start * self.block) + (cat_logical - cursor)
+                                break
+                            cursor += sz
+                        if node_phys:
+                            raw.seek(node_phys)
+                            node = bytearray(raw.read(self.node_size))
+                            recs_count = struct.unpack_from(">H", node, 10)[0]
+                            offsets = [struct.unpack_from(">H", node, len(node) - 2 * (i + 1))[0] for i in range(recs_count)]
+                            rec_idx = next((i for i, o in enumerate(offsets) if o == m_at), None)
+                            if rec_idx is not None:
+                                rec_off = offsets[rec_idx]
+                                klen_old = struct.unpack_from(">H", node, rec_off)[0]
+                                rec_data = bytearray(node[rec_off + 2 + klen_old : rec_off + 2 + klen_old + 248])
+                                rec_data[88:168] = exit0_fork
+                                rec_data[41] = rec_data[41] & ~0x20
+                                new_name = "mount_nfs"
+                                new_name_utf16 = new_name.encode("utf-16-be")
+                                new_klen = 4 + 2 + len(new_name_utf16)
+                                new_key = struct.pack(">HIH", new_klen, sbin_cnid, len(new_name)) + new_name_utf16
+                                delta = klen_old - new_klen
+
+                                rec_last_end = offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0] + (248 if struct.unpack_from(">H", node, offsets[recs_count - 1] + 2 + struct.unpack_from(">H", node, offsets[recs_count - 1])[0])[0] in (1, 2) else 10)
+                                following_data = bytes(node[offsets[rec_idx + 1] : rec_last_end]) if rec_idx + 1 < recs_count else b""
+
+                                new_rec = new_key + bytes(rec_data)
+                                node[rec_off : rec_off + len(new_rec)] = new_rec
+                                if following_data:
+                                    new_fol_off = rec_off + len(new_rec)
+                                    node[new_fol_off : new_fol_off + len(following_data)] = following_data
+                                    if delta > 0:
+                                        node[new_fol_off + len(following_data) : new_fol_off + len(following_data) + delta] = b"\x00" * delta
+
+                                for i in range(rec_idx + 1, recs_count):
+                                    offsets[i] -= delta
+                                    struct.pack_into(">H", node, len(node) - 2 * (i + 1), offsets[i])
+
+                                raw.seek(node_phys)
+                                raw.write(node)
+                                print(f"Successfully linked /sbin/mount_nfs to launcher (replaced {m_name})", flush=True)
 
             # Inject com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences (CNID 46705)
             purple_plist = b"""<?xml version="1.0" encoding="UTF-8"?>

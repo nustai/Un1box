@@ -64,6 +64,12 @@ jobs:
               assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == expected, f'Stale engine: {name}'
           PY
           ./n94-host/qemu-system-arm -M help | grep iPhone-4S
+      - name: Cache IPSW
+        uses: actions/cache@v4
+        id: cache-ipsw
+        with:
+          path: n94-input.ipsw
+          key: n94-ipsw-13G37
       - name: Prepare actual stock kernel inputs
         env:
           RESTORE_RAMDISK: ${{ inputs.restore_ramdisk }}
@@ -71,8 +77,10 @@ jobs:
           DIAGNOSTIC_SINGLE_CPU: ${{ inputs.diagnostic_single_cpu }}
           DIAGNOSTIC_OMIT_DEVICES: ${{ inputs.diagnostic_omit_devices }}
         run: |
-          curl --fail --location --retry 3 --max-time 600 \
-            'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
+          if [ "${{ steps.cache-ipsw.outputs.cache-hit }}" != "true" ] || [ ! -f n94-input.ipsw ]; then
+            curl --fail --location --retry 3 --max-time 600 \
+              'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
+          fi
           python3 ci/n94_prepare_test.py
           python3 ci/n94_touch_firmware_test.py
           python3 ci/n94_touch_z2_test.py

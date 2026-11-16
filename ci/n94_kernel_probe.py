@@ -244,12 +244,22 @@ def probe(binary, bundle, output, seconds):
                         snapshot['fault_mapping'] = qmp('human-monitor-command', {
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                if sample % 10 == 0:
+                if sample % 5 == 0:
                     try:
                         qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
                         framebuffer = (output / 'boot-framebuffer.raw').resolve()
                         qmp('human-monitor-command', {'command-line':
                                      f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
+                        screen_path = output / 'screen.ppm'
+                        if screen_path.exists():
+                            with open(screen_path, 'rb') as f_ppm:
+                                ppm_bytes = f_ppm.read()
+                            h_end = ppm_bytes.find(b'\n', ppm_bytes.find(b'255') + 3) + 1
+                            pix = ppm_bytes[h_end:]
+                            num_colors = len(set(pix[i:i+3] for i in range(0, min(len(pix), 150000), 3)))
+                            if num_colors > 16:
+                                print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors. Exiting probe early.", flush=True)
+                                break
                     except Exception:
                         pass
                 if log.exists() and log.stat().st_size > 256 << 20:
