@@ -27,7 +27,10 @@ def probe(binary, bundle, output, seconds):
     clcd_handoff = os.environ.get('N94_DIAGNOSTIC_CLCD_HANDOFF') == 'true'
     # Exception logs can exhaust the trace budget during demand paging;
     # retain translated instructions for correlation with device accesses.
-    if clcd_handoff:
+    fast_probe = os.environ.get('N94_FAST_PROBE') == 'true'
+    if fast_probe:
+        log_flags = 'guest_errors,unimp'
+    elif clcd_handoff:
         log_flags = 'in_asm,guest_errors,unimp'
     else:
         log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
@@ -244,7 +247,7 @@ def probe(binary, bundle, output, seconds):
                         snapshot['fault_mapping'] = qmp('human-monitor-command', {
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                if sample % 5 == 0:
+                if sample % 2 == 0:
                     try:
                         qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
                         framebuffer = (output / 'boot-framebuffer.raw').resolve()
@@ -392,7 +395,9 @@ def main():
     parser.add_argument("output", type=pathlib.Path)
     parser.add_argument("--seconds", type=int, default=60)
     args = parser.parse_args()
-    for version in (2, 3):
+    target_version = os.environ.get('N94_BOOTARGS_VERSION')
+    versions = (int(target_version),) if target_version in ('2', '3') else (2, 3)
+    for version in versions:
         probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
               args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 300))
 

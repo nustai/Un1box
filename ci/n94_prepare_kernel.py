@@ -823,7 +823,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     if ramdisk is not None:
         command += b" rd=md0"
     else:
-        command += b" rd=disk0"
+        command += b" rd=disk0 rw"
     # The initial ABI prefix is visible in this kernel's _start. Version and tail
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)
