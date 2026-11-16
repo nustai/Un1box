@@ -268,95 +268,102 @@ class HFS:
         with destination.open("r+b") as raw:
             for p, (rec_phys, rec, parent, name) in list(records.items()):
                 owner_flags = rec[41]
-                if not (owner_flags & 0x20):
-                    continue  # already uncompressed
-                res_desc = rec[168:248]
-                res_size = struct.unpack_from(">Q", res_desc, 0)[0]
-                if not res_size:
-                    continue
-                res_data = self.fork(res_desc, 0, res_size)
-                data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
-                rdata = res_data[data_off:data_off + data_len]
-                num_chunks = struct.unpack_from("<I", rdata, 4)[0]
-                uncompressed = bytearray()
-                for i in range(num_chunks):
-                    offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
-                    uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
-                assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
-                if name == "fsck":
-                    # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
-                    uncompressed[0x2a34:0x2a3c] = bytes.fromhex("0020704700bf00bf")
-                elif name == "mobile_obliterator":
-                    # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
-                    uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
-                elif name == "xpcproxy":
-                    # 1. Patch 0x5b80 (file off 0x1b80) to branch unconditionally to 0x5bfa: b #0x5bfa
-                    # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
-                    assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
-                    uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
-                    # 2. Patch 0x6436 (file off 0x2436) to branch unconditionally to 0x6478: b #0x6478
-                    # Bypasses POSIXSpawnType bitmask, leading-slash, and access checks, skipping 0x16 trap
-                    assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
-                    uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
-                    print("Patched xpcproxy with verified child daemon spawn fix (uid=0 + bypass 0x16 trap)", flush=True)
-                elif name == "launchd":
-                    # 1. Patch 0x0f530 (file off 0xb530): b #0xf5f8 (62e0 replaces 0028)
-                    # Prevents any service from being marked 'not allowed to execute' (bit 0x800)
-                    assert uncompressed[0xb530:0xb532] == bytes.fromhex("0028"), "launchd 0xb530 mismatch"
-                    uncompressed[0xb530:0xb532] = bytes.fromhex("62e0")
-                    # 2. Patch 0x1cd1e (file off 0x18d1e): b #0x1cd2e (06e0 replaces 06d0)
-                    # Prevents RunAtLoad dispatcher from asserting/crashing on service errors (launchd + 101675: 0x10)
-                    assert uncompressed[0x18d1e:0x18d20] == bytes.fromhex("06d0"), "launchd 0x18d1e mismatch"
-                    uncompressed[0x18d1e:0x18d20] = bytes.fromhex("06e0")
-                    print("Patched launchd with verified RunAtLoad non-stop dispatch + allow-all execution", flush=True)
+                if owner_flags & 0x20:
+                    res_desc = rec[168:248]
+                    res_size = struct.unpack_from(">Q", res_desc, 0)[0]
+                    if not res_size:
+                        continue
+                    res_data = self.fork(res_desc, 0, res_size)
+                    data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
+                    rdata = res_data[data_off:data_off + data_len]
+                    num_chunks = struct.unpack_from("<I", rdata, 4)[0]
+                    uncompressed = bytearray()
+                    for i in range(num_chunks):
+                        offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
+                        uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
+                    assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                    if name == "fsck":
+                        # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
+                        uncompressed[0x2a34:0x2a3c] = bytes.fromhex("0020704700bf00bf")
+                    elif name == "mobile_obliterator":
+                        # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
+                        uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
+                    elif name == "xpcproxy":
+                        # 1. Patch 0x5b80 (file off 0x1b80) to branch unconditionally to 0x5bfa: b #0x5bfa
+                        # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
+                        assert uncompressed[0x1b80:0x1b82] == bytes.fromhex("3bd0"), "xpcproxy 0x1b80 mismatch"
+                        uncompressed[0x1b80:0x1b82] = bytes.fromhex("3be0")
+                        # 2. Patch 0x6436 (file off 0x2436) to branch unconditionally to 0x6478: b #0x6478
+                        # Bypasses POSIXSpawnType bitmask, leading-slash, and access checks, skipping 0x16 trap
+                        assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
+                        uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
+                        print("Patched xpcproxy with verified child daemon spawn fix (uid=0 + bypass 0x16 trap)", flush=True)
+
+                    blocks_needed = (len(uncompressed) + self.block - 1) // self.block
+                    start_block = next_free_block
+                    next_free_block += blocks_needed
+                    total_allocated += blocks_needed
+
+                    # 1. Write payload
+                    padded = uncompressed + b"\x00" * (blocks_needed * self.block - len(uncompressed))
+                    raw.seek(start_block * self.block)
+                    raw.write(padded)
+
+                    # 2. Update bitmap
+                    for blk in range(start_block, start_block + blocks_needed):
+                        byte_pos = self.block + (blk // 8)
+                        bit_pos = 7 - (blk % 8)
+                        raw.seek(byte_pos)
+                        cur_b = raw.read(1)[0]
+                        raw.seek(byte_pos)
+                        raw.write(bytes([cur_b | (1 << bit_pos)]))
+
+                    # 3. Update catalog ownerFlags (clear UF_COMPRESSED bit 0x20)
+                    raw.seek(rec_phys + 41)
+                    cur_flags = raw.read(1)[0]
+                    raw.seek(rec_phys + 41)
+                    raw.write(bytes([cur_flags & ~0x20]))
+
+                    # 4. Update data_fork in catalog record
+                    fork_data = struct.pack(">QIIII", len(uncompressed), blocks_needed * self.block,
+                                            blocks_needed, start_block, blocks_needed) + b"\x00" * 56
+                    raw.seek(rec_phys + 88)
+                    raw.write(fork_data)
+                    if name == "fsck":
+                        exit0_fork = fork_data
+                    print(f"Uncompressed {name}: {len(uncompressed)} bytes at blocks {start_block}..{start_block+blocks_needed-1}", flush=True)
+                else:
+                    start_block = struct.unpack_from(">I", rec, 88 + 16)[0]
+
+                # Apply binary patches using start_block on disk
+                if name == "launchd":
+                    raw.seek(start_block * self.block + 0xb530)
+                    assert raw.read(2) == bytes.fromhex("0028"), "launchd 0xb530 mismatch"
+                    raw.seek(start_block * self.block + 0xb530)
+                    raw.write(bytes.fromhex("62e0"))
+                    raw.seek(start_block * self.block + 0x18d1e)
+                    assert raw.read(2) == bytes.fromhex("06d0"), "launchd 0x18d1e mismatch"
+                    raw.seek(start_block * self.block + 0x18d1e)
+                    raw.write(bytes.fromhex("06e0"))
+                    print("Patched launchd on disk (allow-all execution + non-stop RunAtLoad dispatch)", flush=True)
                 elif name == "SpringBoard" and p == ("System", "Library", "CoreServices", "SpringBoard.app", "SpringBoard"):
-                    # Patch SpringBoard setup check at 0x471fae to always bypass setup mode
-                    assert uncompressed[0x471fae:0x471fb0] == bytes.fromhex("21d0"), "SpringBoard 0x471fae mismatch"
-                    uncompressed[0x471fae:0x471fb0] = bytes.fromhex("00bf")
-                    print("Patched SpringBoard at 0x471fae to nop (bypass setup)", flush=True)
+                    raw.seek(start_block * self.block + 0x471fae)
+                    assert raw.read(2) == bytes.fromhex("21d0"), "SpringBoard 0x471fae mismatch"
+                    raw.seek(start_block * self.block + 0x471fae)
+                    raw.write(bytes.fromhex("00bf"))
+                    print("Patched SpringBoard on disk (bypass setup mode)", flush=True)
                 elif name == "backboardd":
-                    # Patch backboardd hasBlankedScreen store at 0x30e1e to always be false (movs r0, #0; nop)
-                    assert uncompressed[0x30e1e:0x30e22] == bytes.fromhex("1ff064e8"), "backboardd 0x30e1e mismatch"
-                    uncompressed[0x30e1e:0x30e22] = bytes.fromhex("002000bf")
-                    print("Patched backboardd at 0x30e1e to force unblank", flush=True)
+                    raw.seek(start_block * self.block + 0x30e1e)
+                    assert raw.read(4) == bytes.fromhex("1ff064e8"), "backboardd 0x30e1e mismatch"
+                    raw.seek(start_block * self.block + 0x30e1e)
+                    raw.write(bytes.fromhex("002000bf"))
+                    print("Patched backboardd on disk (force unblank screen)", flush=True)
                 elif name == "keybagd":
-                    # Patch keybagd main to return 0 immediately (bypasses missing systembag.kb fatal reboot)
-                    assert uncompressed[0x166cc:0x166d4] == bytes.fromhex("f0b503af2de90005"), "keybagd 0x166cc mismatch"
-                    uncompressed[0x166cc:0x166d4] = bytes.fromhex("0020704700bf00bf")
-                    print("Patched keybagd at 0x166cc to exit 0", flush=True)
-                blocks_needed = (len(uncompressed) + self.block - 1) // self.block
-                start_block = next_free_block
-                next_free_block += blocks_needed
-                total_allocated += blocks_needed
-
-                # 1. Write payload
-                padded = uncompressed + b"\x00" * (blocks_needed * self.block - len(uncompressed))
-                raw.seek(start_block * self.block)
-                raw.write(padded)
-
-                # 2. Update bitmap
-                for blk in range(start_block, start_block + blocks_needed):
-                    byte_pos = self.block + (blk // 8)
-                    bit_pos = 7 - (blk % 8)
-                    raw.seek(byte_pos)
-                    cur_b = raw.read(1)[0]
-                    raw.seek(byte_pos)
-                    raw.write(bytes([cur_b | (1 << bit_pos)]))
-
-                # 3. Update catalog ownerFlags (clear UF_COMPRESSED bit 0x20)
-                raw.seek(rec_phys + 41)
-                cur_flags = raw.read(1)[0]
-                raw.seek(rec_phys + 41)
-                raw.write(bytes([cur_flags & ~0x20]))
-
-                # 4. Update data_fork in catalog record
-                fork_data = struct.pack(">QIIII", len(uncompressed), blocks_needed * self.block,
-                                        blocks_needed, start_block, blocks_needed) + b"\x00" * 56
-                raw.seek(rec_phys + 88)
-                raw.write(fork_data)
-                if name == "fsck":
-                    exit0_fork = fork_data
-                print(f"Uncompressed {name}: {len(uncompressed)} bytes at blocks {start_block}..{start_block+blocks_needed-1}", flush=True)
+                    raw.seek(start_block * self.block + 0x166cc)
+                    assert raw.read(8) == bytes.fromhex("f0b503af2de90005"), "keybagd 0x166cc mismatch"
+                    raw.seek(start_block * self.block + 0x166cc)
+                    raw.write(bytes.fromhex("0020704700bf00bf"))
+                    print("Patched keybagd on disk at 0x166cc to exit 0", flush=True)
 
             # Assign exit-0 stub to tasks that have no data fork (e.g. cc_fips_test, FinishRestoreFromBackup)
             if exit0_fork:
