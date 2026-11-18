@@ -319,19 +319,18 @@ class HFS:
                         uncompressed[0x3211:0x3211 + len(env_strings)] = env_strings
 
                         # Helper function at 0x1b82 (virtual 0x5b82) in the dead code space after 0x5b80:
-                        # Calls setenv for each environment variable and returns to caller
-                        def movw_movt(reg, val):
-                            low = val & 0xffff
-                            high = (val >> 16) & 0xffff
-                            def enc(is_movt, imm16):
-                                i = (imm16 >> 11) & 1
-                                imm4 = (imm16 >> 12) & 0xf
-                                imm3 = (imm16 >> 8) & 7
-                                imm8 = imm16 & 0xff
-                                hw1 = (0xf2c0 if is_movt else 0xf240) | (i << 10) | imm4
-                                hw2 = (imm3 << 12) | (reg << 8) | imm8
-                                return struct.pack("<2H", hw1, hw2)
-                            return enc(False, low) + enc(True, high)
+                        # Calls setenv for each environment variable using 100% PC-relative addressing (PIE-safe)
+                        def movw_imm(reg, imm16):
+                            i = (imm16 >> 11) & 1
+                            imm4 = (imm16 >> 12) & 0xf
+                            imm3 = (imm16 >> 8) & 7
+                            imm8 = imm16 & 0xff
+                            hw1 = 0xf240 | (i << 10) | imm4
+                            hw2 = (imm3 << 12) | (reg << 8) | imm8
+                            return struct.pack("<2H", hw1, hw2)
+
+                        def add_reg_pc(reg):
+                            return struct.pack("<H", 0x4478 | reg)
 
                         def blx_arm(from_addr, target):
                             from_pc = (from_addr + 4) & ~3
@@ -346,31 +345,48 @@ class HFS:
                             hw2 = 0xe800 | (j1 << 13) | (j2 << 11) | imm11H
                             return struct.pack("<2H", hw1, hw2)
 
+                        # String target addresses in __cstring:
+                        str_avoid  = 0x7211  # __CFPREFERENCES_AVOID_DAEMON
+                        str_one    = 0x722e  # 1
+                        str_nano   = 0x7230  # MallocNanoZone
+                        str_zero   = 0x723f  # 0
+                        str_direct = 0x7241  # CFPreferencesDirectMode
+
                         cur = 0x5b82
                         helper = bytearray()
-                        helper.extend(bytes.fromhex("2de9ff40"))  # push.w {r0-r7, lr}
-                        cur += 4
+                        helper.extend(bytes.fromhex("2de9ff40")); cur += 4  # push.w {r0-r7, lr}
 
-                        # setenv(__CFPREFERENCES_AVOID_DAEMON, 1, 1)
-                        helper.extend(movw_movt(0, 0x7211)); cur += 8
-                        helper.extend(movw_movt(1, 0x722e)); cur += 8
-                        helper.extend(bytes.fromhex("0122")); cur += 2
+                        # 1. setenv(__CFPREFERENCES_AVOID_DAEMON, 1, 1)
+                        imm = str_avoid - (cur + 4 + 4)
+                        helper.extend(movw_imm(0, imm)); cur += 4
+                        helper.extend(add_reg_pc(0)); cur += 2
+                        imm = str_one - (cur + 4 + 4)
+                        helper.extend(movw_imm(1, imm)); cur += 4
+                        helper.extend(add_reg_pc(1)); cur += 2
+                        helper.extend(bytes.fromhex("0122")); cur += 2  # movs r2, #1
                         helper.extend(blx_arm(cur, 0x7f40)); cur += 4
 
-                        # setenv(MallocNanoZone, 0, 1)
-                        helper.extend(movw_movt(0, 0x7230)); cur += 8
-                        helper.extend(movw_movt(1, 0x723f)); cur += 8
-                        helper.extend(bytes.fromhex("0122")); cur += 2
+                        # 2. setenv(MallocNanoZone, 0, 1)
+                        imm = str_nano - (cur + 4 + 4)
+                        helper.extend(movw_imm(0, imm)); cur += 4
+                        helper.extend(add_reg_pc(0)); cur += 2
+                        imm = str_zero - (cur + 4 + 4)
+                        helper.extend(movw_imm(1, imm)); cur += 4
+                        helper.extend(add_reg_pc(1)); cur += 2
+                        helper.extend(bytes.fromhex("0122")); cur += 2  # movs r2, #1
                         helper.extend(blx_arm(cur, 0x7f40)); cur += 4
 
-                        # setenv(CFPreferencesDirectMode, 1, 1)
-                        helper.extend(movw_movt(0, 0x7241)); cur += 8
-                        helper.extend(movw_movt(1, 0x722e)); cur += 8
-                        helper.extend(bytes.fromhex("0122")); cur += 2
+                        # 3. setenv(CFPreferencesDirectMode, 1, 1)
+                        imm = str_direct - (cur + 4 + 4)
+                        helper.extend(movw_imm(0, imm)); cur += 4
+                        helper.extend(add_reg_pc(0)); cur += 2
+                        imm = str_one - (cur + 4 + 4)
+                        helper.extend(movw_imm(1, imm)); cur += 4
+                        helper.extend(add_reg_pc(1)); cur += 2
+                        helper.extend(bytes.fromhex("0122")); cur += 2  # movs r2, #1
                         helper.extend(blx_arm(cur, 0x7f40)); cur += 4
 
-                        helper.extend(bytes.fromhex("bde8ff80"))  # pop.w {r0-r7, pc}
-                        cur += 4
+                        helper.extend(bytes.fromhex("bde8ff80")); cur += 4  # pop.w {r0-r7, pc}
 
                         assert len(helper) <= (0x1bfa - 0x1b82), f"Helper too big: {len(helper)}"
                         uncompressed[0x1b82:0x1b82 + len(helper)] = helper
@@ -378,7 +394,7 @@ class HFS:
                         # 3. Hook bl #0x5b82 at 0x266c (virtual 0x666c) in main()
                         assert uncompressed[0x266c:0x2670] == bytes.fromhex("c046c046"), "xpcproxy 0x266c mismatch"
                         uncompressed[0x266c:0x2670] = bytes.fromhex("fff789fa")
-                        print("Patched xpcproxy (uid=0 root spawn + setenv __CFPREFERENCES_AVOID_DAEMON)", flush=True)
+                        print("Patched xpcproxy (uid=0 root spawn + PC-relative setenv __CFPREFERENCES_AVOID_DAEMON)", flush=True)
                 else:
                     uncompressed = None
 
