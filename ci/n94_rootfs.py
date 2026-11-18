@@ -261,9 +261,19 @@ class HFS:
                 parts.append(name)
             return tuple(reversed(parts))
 
+        wanted_plists = {
+            "com.apple.SpringBoard.plist",
+            "com.apple.springboard.plist",
+            "com.apple.backboardd.plist",
+            "com.apple.assertiond.plist",
+            "com.apple.powerd.plist",
+            "com.apple.UserEventAgent-System.plist",
+        }
         for node_id, at, key_len, parent, name, rec in candidates:
             p = folder_path(parent) + (name,)
-            if p in targets:
+            if "SpringBoard" in name or "springboard" in name or "backboard" in name:
+                print(f"Catalog entry: p={p}, name={name}", flush=True)
+            if p in targets or name in wanted_plists:
                 cat_logical = node_id * self.node_size
                 cursor = 0
                 for ext_idx in range(8):
@@ -423,8 +433,8 @@ class HFS:
                             start_blk = struct.unpack_from(">I", rec, 88 + 16)[0]
                             raw.seek(start_blk * self.block)
                             raw_plist = raw.read(data_size)
-                        p_dict = plistlib.loads(raw_plist)
-                        print(f"Loaded {name}: Label={p_dict.get('Label')}, RunAtLoad={p_dict.get('RunAtLoad')}, KeepAlive={p_dict.get('KeepAlive')}", flush=True)
+                        p_dict = plistlib.loads(raw_plist.strip(b"\x00"))
+                        print(f"Loaded {name} (path: {'/'.join(p)}): Label={p_dict.get('Label')}, RunAtLoad={p_dict.get('RunAtLoad')}, KeepAlive={p_dict.get('KeepAlive')}", flush=True)
                         p_dict["RunAtLoad"] = True
                         p_dict["KeepAlive"] = True
                         if "Disabled" in p_dict:
