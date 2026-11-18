@@ -248,7 +248,7 @@ def probe(binary, bundle, output, seconds):
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 if sample % 10 == 0 or sample == max(1, int(seconds)) - 1:
                     (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                if sample % 2 == 0:
+                if sample > 15 or sample % 2 == 0:
                     try:
                         qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
                         screen_path = output / 'screen.ppm'

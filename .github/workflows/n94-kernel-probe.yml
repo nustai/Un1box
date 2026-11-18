@@ -35,6 +35,10 @@ on:
         description: Diagnostic only - experiment with inferred CLCD handoff registers
         type: boolean
         default: true
+      probe_seconds:
+        description: Maximum duration of the diagnostic probe in seconds (default 250)
+        type: string
+        default: '250'
 
 permissions:
   contents: read
@@ -109,7 +113,7 @@ jobs:
           N94_DIAGNOSTIC_CLCD_HANDOFF: ${{ inputs.diagnostic_clcd_handoff }}
           N94_FAST_PROBE: "true"
           N94_BOOTARGS_VERSION: "2"
-        run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds 500
+        run: python3 ci/n94_kernel_probe.py n94-host/qemu-system-arm n94-images n94-traces --seconds ${{ inputs.probe_seconds || '250' }}
       - name: Verify observed restore userspace
         if: inputs.diagnostic_no_secure_root && inputs.restore_ramdisk && inputs.breakpoint == ''
         run: python3 ci/n94_restore_evidence.py n94-images n94-traces

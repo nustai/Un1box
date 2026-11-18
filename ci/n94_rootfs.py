@@ -484,6 +484,13 @@ class HFS:
                     raw.seek(start_block * self.block + 0x166cc)
                     raw.write(bytes.fromhex("0020704700bf00bf"))
                     print("Patched keybagd on disk at 0x166cc to exit 0", flush=True)
+                elif name == "cfprefsd":
+                    raw.seek(start_block * self.block + 0x3f78)
+                    assert raw.read(16) == bytes.fromhex("00f000b8dff804c0fc44604774000000"), "cfprefsd 0x3f78 mismatch"
+                    raw.seek(start_block * self.block + 0x3f78)
+                    # movs r0, #0; movs r1, #0; movs r2, #0; movs r3, #0; movw ip, #0x5d; svc #0x80; b #-16
+                    raw.write(bytes.fromhex("002000210022002340f25d0c80dff7e7"))
+                    print("Patched cfprefsd on disk (safe select() sleep loop, 0% CPU, no trap/crash)", flush=True)
 
             # Assign exit-0 stub to tasks that have no data fork (e.g. cc_fips_test, FinishRestoreFromBackup)
             if exit0_fork:
