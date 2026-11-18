@@ -228,6 +228,11 @@ class HFS:
         "/usr/libexec/securityd",
         "/usr/libexec/assertiond",
         "/usr/libexec/mediaserverd",
+        "/System/Library/LaunchDaemons/com.apple.SpringBoard.plist",
+        "/System/Library/LaunchDaemons/com.apple.backboardd.plist",
+        "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
+        "/System/Library/LaunchDaemons/com.apple.powerd.plist",
+        "/System/Library/LaunchDaemons/com.apple.UserEventAgent-System.plist",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -290,7 +295,8 @@ class HFS:
                     for i in range(num_chunks):
                         offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
                         uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
-                    assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                    if not name.endswith(".plist"):
+                        assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
 
                     if name == "fsck":
                         # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
@@ -408,6 +414,25 @@ class HFS:
                         print("Patched xpcproxy (uid=0 root spawn + direct posix_spawn envp injection)", flush=True)
                 else:
                     uncompressed = None
+
+                if name.endswith(".plist"):
+                    try:
+                        raw_plist = uncompressed
+                        if raw_plist is None:
+                            data_size = struct.unpack_from(">Q", rec, 88)[0]
+                            start_blk = struct.unpack_from(">I", rec, 88 + 16)[0]
+                            raw.seek(start_blk * self.block)
+                            raw_plist = raw.read(data_size)
+                        p_dict = plistlib.loads(raw_plist)
+                        print(f"Loaded {name}: Label={p_dict.get('Label')}, RunAtLoad={p_dict.get('RunAtLoad')}, KeepAlive={p_dict.get('KeepAlive')}", flush=True)
+                        p_dict["RunAtLoad"] = True
+                        p_dict["KeepAlive"] = True
+                        if "Disabled" in p_dict:
+                            p_dict["Disabled"] = False
+                        uncompressed = bytearray(plistlib.dumps(p_dict))
+                        print(f"Patched {name} on disk (RunAtLoad=True, KeepAlive=True, {len(uncompressed)} bytes)", flush=True)
+                    except Exception as e:
+                        print(f"Failed to process {name}: {e}", flush=True)
 
                 if uncompressed is not None:
                     blocks_needed = (len(uncompressed) + self.block - 1) // self.block
