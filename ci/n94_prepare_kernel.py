@@ -691,6 +691,30 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         strategy_repl = bytes.fromhex('10b582b004466946c9f4b6f0009ad4f84810d4f830301b0b08bf01234ff2840cc8f23f0cdcf800c00cf5004cccf80010ccf80420ccf80830d4f8201011f0010f14bf01210221ccf80c100021c4f82810c4f834102046c9f4b9f02046c9f4baf202b010bd00bf')
         assert len(strategy_repl) == len(strategy_target), f"Byte length mismatch: {len(strategy_repl)} != {len(strategy_target)}"
         kernel = kernel[:p45] + strategy_repl + kernel[p45 + len(strategy_target):]
+    # MAC policy enforcement: clear all 12 mac_*_enforce flags in __DATA to eliminate sandbox denials
+    # Targets: device, pipe, posixsem, posixshm, proc, socket, system, sysvmsg, sysvsem, sysvshm, vm, vnode enforce
+    # Located at 0x80404114 (file offset 0x403114)
+    mac_enforce_target = bytes.fromhex('01000000' * 12 + '0300000002000000ffffffff')
+    p46 = kernel.find(mac_enforce_target)
+    if p46 != -1:
+        mac_enforce_repl = bytes.fromhex('00000000' * 12 + '0300000002000000ffffffff')
+        assert len(mac_enforce_repl) == len(mac_enforce_target), f"Byte length mismatch: {len(mac_enforce_repl)} != {len(mac_enforce_target)}"
+        kernel = kernel[:p46] + mac_enforce_repl + kernel[p46 + len(mac_enforce_target):]
+    # vfs_mountroot: mount rootfs read-write (MNT_RDWR = 0) instead of read-only (MNT_RDONLY = 1)
+    # Target 1 at 0x8020424e: movw r0, #0xded4; movs r1, #1 -> movs r1, #0
+    mountroot_target1 = bytes.fromhex('4df6d4600121c0f220006e91')
+    p47 = kernel.find(mountroot_target1)
+    if p47 != -1:
+        mountroot_repl1 = bytes.fromhex('4df6d4600021c0f220006e91')
+        assert len(mountroot_repl1) == len(mountroot_target1), f"Byte length mismatch: {len(mountroot_repl1)} != {len(mountroot_target1)}"
+        kernel = kernel[:p47] + mountroot_repl1 + kernel[p47 + len(mountroot_target1):]
+    # Target 2 at 0x80204282: movw r0, #0xdea0; movs r1, #1 -> movs r1, #0
+    mountroot_target2 = bytes.fromhex('4df6a0600121c0f220002391')
+    p48 = kernel.find(mountroot_target2)
+    if p48 != -1:
+        mountroot_repl2 = bytes.fromhex('4df6a0600021c0f220002391')
+        assert len(mountroot_repl2) == len(mountroot_target2), f"Byte length mismatch: {len(mountroot_repl2)} != {len(mountroot_target2)}"
+        kernel = kernel[:p48] + mountroot_repl2 + kernel[p48 + len(mountroot_target2):]
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
