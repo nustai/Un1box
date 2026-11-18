@@ -18,7 +18,7 @@ on:
       diagnostic_no_secure_root:
         description: Diagnostic only - remove stock md secure-root policy (insecure)
         type: boolean
-        default: false
+        default: true
       follow_breakpoint:
         description: Optional second breakpoint after the first stop
         required: false
