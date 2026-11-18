@@ -366,30 +366,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         zp_repl = bytes.fromhex('4910012944e0')
         assert len(zp_repl) == len(zp_target), f"Byte length mismatch: {len(zp_repl)} != {len(zp_target)}"
         kernel = kernel[:p_zp] + zp_repl + kernel[p_zp + len(zp_target):]
-    # vfs_isrdonly: always return 0 (force read-write root / filesystem)
-    # Target: 0x8010281c: ldr r0, [r0, #0x3c]; and r0, r0, #1; bx lr
-    vfs_isrdonly_target = bytes.fromhex('c06b00f001007047')
-    p_isrd = kernel.find(vfs_isrdonly_target)
-    if p_isrd != -1:
-        vfs_isrdonly_repl = bytes.fromhex('0020704700bf00bf')
-        assert len(vfs_isrdonly_repl) == len(vfs_isrdonly_target)
-        kernel = kernel[:p_isrd] + vfs_isrdonly_repl + kernel[p_isrd + len(vfs_isrdonly_target):]
-    # vnode_vfsisrdonly: always return 0 (force read-write vnodes)
-    # Target: 0x801036b4: ldr.w r0, [r0, #0x84]; ldr r0, [r0, #0x3c]; and r0, r0, #1; bx lr
-    vnode_isrd_target = bytes.fromhex('d0f88400c06b00f001007047')
-    p_vnode_isrd = kernel.find(vnode_isrd_target)
-    if p_vnode_isrd != -1:
-        vnode_isrd_repl = bytes.fromhex('0020704700bf00bf00bf00bf')
-        assert len(vnode_isrd_repl) == len(vnode_isrd_target)
-        kernel = kernel[:p_vnode_isrd] + vnode_isrd_repl + kernel[p_vnode_isrd + len(vnode_isrd_target):]
-    # hfs_clear_ro: clear HFS_READ_ONLY on mount in hfs_mountfs
-    # Target: 0x80207d06: orr.w r0, r0, #1; strb.w r0, [r11, #8] -> bic.w r0, r0, #1
-    hfs_ro_target = bytes.fromhex('40f00100cbf80800')
-    p_hfs_ro = kernel.find(hfs_ro_target)
-    if p_hfs_ro != -1:
-        hfs_ro_repl = bytes.fromhex('20f00100cbf80800')
-        assert len(hfs_ro_repl) == len(hfs_ro_target)
-        kernel = kernel[:p_hfs_ro] + hfs_ro_repl + kernel[p_hfs_ro + len(hfs_ro_target):]
     # AppleIOPFMI::newDeviceWithRegistryEntry: pass AppleIOPFMI (fp) as provider in r2 to withRegistryEntry
     # Target: 0x80e4d4bc in AppleIOPFMI
     fmi_newdev_target = bytes.fromhex('3b482946099a78440068d0f848335846984768b9')

@@ -363,12 +363,26 @@ class HFS:
                     raw.seek(start_block * self.block + 0x471fae)
                     raw.write(bytes.fromhex("00bf"))
                     print("Patched SpringBoard on disk (bypass setup mode)", flush=True)
+                elif name == "cfprefsd":
+                    raw.seek(start_block * self.block + 0x3f78)
+                    assert raw.read(8) == bytes.fromhex("00f000b8dff804c0"), "cfprefsd 0x3f78 mismatch"
+                    raw.seek(start_block * self.block + 0x3f78)
+                    raw.write(bytes.fromhex("4ff01d0c80dffee7"))
+                    print("Patched cfprefsd on disk (SYS_pause non-crashing daemon stub)", flush=True)
                 elif name == "backboardd":
+                    raw.seek(start_block * self.block + 0x123f0)
+                    assert raw.read(4) == bytes.fromhex("3df0deed"), "backboardd 0x123f0 mismatch"
+                    raw.seek(start_block * self.block + 0x123f0)
+                    raw.write(bytes.fromhex("00bf00bf"))
+                    raw.seek(start_block * self.block + 0x12400)
+                    assert raw.read(4) == bytes.fromhex("3df0d8ed"), "backboardd 0x12400 mismatch"
+                    raw.seek(start_block * self.block + 0x12400)
+                    raw.write(bytes.fromhex("002000bf"))
                     raw.seek(start_block * self.block + 0x30e1e)
                     assert raw.read(4) == bytes.fromhex("1ff064e8"), "backboardd 0x30e1e mismatch"
                     raw.seek(start_block * self.block + 0x30e1e)
                     raw.write(bytes.fromhex("002000bf"))
-                    print("Patched backboardd on disk (force unblank screen)", flush=True)
+                    print("Patched backboardd on disk (bypass CFPreferencesAppSynchronize + force unblank screen)", flush=True)
                 elif name == "keybagd":
                     raw.seek(start_block * self.block + 0x166cc)
                     assert raw.read(8) == bytes.fromhex("f0b503af2de90005"), "keybagd 0x166cc mismatch"
