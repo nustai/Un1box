@@ -147,7 +147,7 @@ def probe(binary, bundle, output, seconds):
             qmp("cont")
             started = time.monotonic()
             for sample in range(max(1, int(seconds))):
-                time.sleep(0.25 if sample == 0 else 1)
+                time.sleep(0.25 if sample == 0 else 1.25)
                 if debugger is not None and qmp('query-status')['status'] == 'debug':
                     registers = qmp('human-monitor-command', {'command-line': 'info registers'})
                     match = re.search(r'R00=([0-9a-fA-F]{8})', registers)
@@ -246,13 +246,11 @@ def probe(binary, bundle, output, seconds):
                     if fault:
                         snapshot['fault_mapping'] = qmp('human-monitor-command', {
                             'command-line': 'gva2gpa ' + fault.group(1)})
-                (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
+                if sample % 10 == 0 or sample == max(1, int(seconds)) - 1:
+                    (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                 if sample % 2 == 0:
                     try:
                         qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
-                        framebuffer = (output / 'boot-framebuffer.raw').resolve()
-                        qmp('human-monitor-command', {'command-line':
-                                     f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
                         screen_path = output / 'screen.ppm'
                         if screen_path.exists():
                             with open(screen_path, 'rb') as f_ppm:
@@ -262,6 +260,10 @@ def probe(binary, bundle, output, seconds):
                             num_colors = len(set(pix[i:i+3] for i in range(0, min(len(pix), 150000), 3)))
                             if num_colors > 16:
                                 print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors. Exiting probe early.", flush=True)
+                                framebuffer = (output / 'boot-framebuffer.raw').resolve()
+                                qmp('human-monitor-command', {'command-line':
+                                             f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
+                                (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                                 break
                     except Exception:
                         pass
@@ -271,6 +273,7 @@ def probe(binary, bundle, output, seconds):
                     break
                 qmp("cont")
             qmp("stop")
+            (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
             (output / "cpus.json").write_text(json.dumps(qmp("query-cpus-fast"), indent=2))
             try:
                 # This captures the actual QEMU console, which may be blank
@@ -399,7 +402,7 @@ def main():
     versions = (int(target_version),) if target_version in ('2', '3') else (2, 3)
     for version in versions:
         probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
-              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 300))
+              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 600))
 
 
 if __name__ == "__main__":
