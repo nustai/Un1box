@@ -263,6 +263,16 @@ def probe(binary, bundle, output, seconds):
                                 framebuffer = (output / 'boot-framebuffer.raw').resolve()
                                 qmp('human-monitor-command', {'command-line':
                                              f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
+                                try:
+                                    fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
+                                    m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
+                                    if m_fb:
+                                        cur_fb = int(m_fb.group(1), 16)
+                                        if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                                            qmp('human-monitor-command', {'command-line':
+                                                         f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
+                                except Exception:
+                                    pass
                                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
                                 break
                     except Exception:
@@ -286,6 +296,16 @@ def probe(binary, bundle, output, seconds):
                          f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
             if result or not framebuffer.is_file():
                 (output / 'framebuffer-error.txt').write_text(str(result) + '\n')
+            try:
+                fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
+                m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
+                if m_fb:
+                    cur_fb = int(m_fb.group(1), 16)
+                    if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                        qmp('human-monitor-command', {'command-line':
+                                     f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
+            except Exception:
+                pass
             stream.write(b'{"execute":"quit"}\n')
             process.wait(timeout=10)
         except Exception as error:

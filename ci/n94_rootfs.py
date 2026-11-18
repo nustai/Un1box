@@ -363,12 +363,7 @@ class HFS:
                     raw.seek(start_block * self.block + 0x471fae)
                     raw.write(bytes.fromhex("00bf"))
                     print("Patched SpringBoard on disk (bypass setup mode)", flush=True)
-                elif name == "cfprefsd":
-                    raw.seek(start_block * self.block + 0x3f78)
-                    assert raw.read(8) == bytes.fromhex("00f000b8dff804c0"), "cfprefsd 0x3f78 mismatch"
-                    raw.seek(start_block * self.block + 0x3f78)
-                    raw.write(bytes.fromhex("0020704700bf00bf"))
-                    print("Patched cfprefsd on disk (exit 0 stub)", flush=True)
+
                 elif name == "backboardd":
                     raw.seek(start_block * self.block + 0x123f0)
                     assert raw.read(4) == bytes.fromhex("3df0deed"), "backboardd 0x123f0 mismatch"
