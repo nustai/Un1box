@@ -50,6 +50,7 @@ def probe(binary, bundle, output, seconds):
     snapshots = []
     failure = None
     breakpoint_hit = False
+    ios_boot_confirmed = False
     with (output / "stderr.log").open("w+") as errors:
         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
         connection = None
@@ -257,9 +258,10 @@ def probe(binary, bundle, output, seconds):
                                 ppm_bytes = f_ppm.read()
                             h_end = ppm_bytes.find(b'\n', ppm_bytes.find(b'255') + 3) + 1
                             pix = ppm_bytes[h_end:]
-                            num_colors = len(set(pix[i:i+3] for i in range(0, min(len(pix), 150000), 3)))
+                            num_colors = len(set(pix[i:i+3] for i in range(0, len(pix), 12)))
                             if num_colors > 16:
-                                print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors. Exiting probe early.", flush=True)
+                                print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors across full display. Exiting probe early.", flush=True)
+                                ios_boot_confirmed = True
                                 framebuffer = (output / 'boot-framebuffer.raw').resolve()
                                 qmp('human-monitor-command', {'command-line':
                                              f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
@@ -400,7 +402,7 @@ def probe(binary, bundle, output, seconds):
     summary = {"diagnostic_only": True, "bundle": bundle.name, "exit_code": process.returncode,
                "samples": len(snapshots), "untrimmed_log_bytes": log_size,
                "uart_bytes": serial.stat().st_size if serial.exists() else 0,
-               "ios_boot_confirmed": False, "probe_error": failure}
+               "ios_boot_confirmed": ios_boot_confirmed, "probe_error": failure}
     (output / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary), flush=True)
     if snapshots:
