@@ -233,73 +233,12 @@ class HFS:
         "/private/etc/passwd",
         "/private/etc/group",
         "/private/etc/hosts",
-        "/private/etc/services",
         "/private/etc/fstab",
         "/private/etc/notify.conf",
         "/private/etc/ttys",
+        "/usr/libexec/atwakeup",
+        "/usr/libexec/hpfd",
         "/System/Library/CoreServices/prdaily",
-        "/System/Library/CoreServices/AssistiveTouch.app/assistivetouchd",
-        "/System/Library/CoreServices/CacheDeleteAppContainerCaches",
-        "/System/Library/CoreServices/CacheDeleteDaily",
-        "/System/Library/CoreServices/CacheDeleteITunesStore",
-        "/System/Library/CoreServices/CacheDeleteSystemFiles",
-        "/System/Library/CoreServices/DeviceOMatic.app/DeviceOMatic",
-        "/System/Library/CoreServices/EscrowSecurityAlert.app/EscrowSecurityAlert",
-        "/System/Library/CoreServices/MobileStorageMounter.app/MobileStorageMounter",
-        "/System/Library/CoreServices/VoiceOverTouch.app/scrod",
-        "/System/Library/CoreServices/VoiceOverTouch.app/vot",
-        "/System/Library/Frameworks/AddressBook.framework/Support/ABDatabaseDoctor",
-        "/System/Library/Frameworks/CoreTelephony.framework/Support/DMHelper",
-        "/System/Library/Frameworks/OpenGLES.framework/CVMCompiler",
-        "/System/Library/Frameworks/Security.framework/CircleJoinRequested/CircleJoinRequested",
-        "/System/Library/Frameworks/Security.framework/IDSKeychainSyncingProxy.bundle/IDSKeychainSyncingProxy",
-        "/System/Library/Frameworks/Security.framework/swcagent",
-        "/System/Library/Frameworks/UIKit.framework/Support/pasteboardd",
-        "/System/Library/PrivateFrameworks/AccountNotification.framework/and",
-        "/System/Library/PrivateFrameworks/AskPermission.framework/askpermissiond",
-        "/System/Library/PrivateFrameworks/AssetCacheServices.framework/XPCServices/AssetCacheLocatorService.xpc/AssetCacheLocatorService",
-        "/System/Library/PrivateFrameworks/AuthKit.framework/akd",
-        "/System/Library/PrivateFrameworks/CalendarDaemon.framework/Support/calaccessd",
-        "/System/Library/PrivateFrameworks/CameraUI.framework/Support/nebulad",
-        "/System/Library/PrivateFrameworks/CertUI.framework/certui_relay",
-        "/System/Library/PrivateFrameworks/CloudPhotoServices.framework/Support/CloudPhotoDerivativeGenerator",
-        "/System/Library/PrivateFrameworks/CoreCDP.framework/cdpd",
-        "/System/Library/PrivateFrameworks/CoreFollowUp.framework/followupd",
-        "/System/Library/PrivateFrameworks/CryptoTokenKit.framework/ctkd",
-        "/System/Library/PrivateFrameworks/FamilyCircle.framework/familycircled",
-        "/System/Library/PrivateFrameworks/FoundationODR.framework/ondemandd.bundle/ondemandd",
-        "/System/Library/PrivateFrameworks/IAP.framework/Support/iap2d",
-        "/System/Library/PrivateFrameworks/IAP.framework/Support/iapd",
-        "/System/Library/PrivateFrameworks/IAPAuthentication.framework/Support/iapauthd",
-        "/System/Library/PrivateFrameworks/IDSFoundation.framework/IDSRemoteURLConnectionAgent.app/IDSRemoteURLConnectionAgent",
-        "/System/Library/PrivateFrameworks/IMDPersistence.framework/IMAutomaticHistoryDeletionAgent.app/IMAutomaticHistoryDeletionAgent",
-        "/System/Library/PrivateFrameworks/IMFoundation.framework/IMLoggingAgent",
-        "/System/Library/PrivateFrameworks/IMTransferServices.framework/IMTransferAgent.app/IMTransferAgent",
-        "/System/Library/PrivateFrameworks/ManagedConfiguration.framework/Support/mdmd",
-        "/System/Library/PrivateFrameworks/ManagedConfiguration.framework/Support/teslad",
-        "/System/Library/PrivateFrameworks/MediaServices.framework/Support/mediaartworkd",
-        "/System/Library/PrivateFrameworks/MediaStream.framework/Support/mstreamd",
-        "/System/Library/PrivateFrameworks/MobileAccessoryUpdater.framework/Support/fud",
-        "/System/Library/PrivateFrameworks/PrintKit.framework/printd",
-        "/System/Library/PrivateFrameworks/QuickLookThumbnailing.framework/Support/com.apple.quicklook.ThumbnailsAgent",
-        "/System/Library/PrivateFrameworks/StoreBookkeeperClient.framework/Support/storebookkeeperd",
-        "/System/Library/PrivateFrameworks/UserActivity.framework/Agents/useractivityd",
-        "/System/Library/PrivateFrameworks/UserFS.framework/userfs_helper",
-        "/System/Library/PrivateFrameworks/UserFS.framework/userfsd",
-        "/System/Library/PrivateFrameworks/VoiceMemos.framework/Support/voicememod",
-        "/System/Library/PrivateFrameworks/WelcomeKit.framework/matd",
-        "/System/Library/PrivateFrameworks/iOSDiagnostics.framework/iosdiagnosticsd",
-        "/usr/bin/DumpBasebandCrash",
-        "/usr/bin/powerlogHelperd",
-        "/usr/bin/powerlogd",
-        "/usr/bin/sysdiagnose",
-        "/usr/sbin/BTAvrcp",
-        "/usr/sbin/BTMap",
-        "/usr/sbin/BTPbap",
-        "/usr/sbin/BlueTool",
-        "/usr/sbin/addNetworkInterface",
-        "/usr/sbin/aslmanager",
-        "/usr/sbin/mDNSResponderHelper",
         "/System/Library/LaunchDaemons/com.apple.SpringBoard.plist",
         "/System/Library/LaunchDaemons/com.apple.backboardd.plist",
         "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
@@ -345,7 +284,7 @@ class HFS:
             p = folder_path(parent) + (name,)
             if "SpringBoard" in name or "springboard" in name or "backboard" in name:
                 print(f"Catalog entry: p={p}, name={name}", flush=True)
-            if p in targets or name in wanted_plists or (len(p) >= 2 and p[0] == "usr" and p[1] == "libexec"):
+            if p in targets or name in wanted_plists:
                 cat_logical = node_id * self.node_size
                 cursor = 0
                 for ext_idx in range(8):
@@ -569,6 +508,7 @@ class HFS:
                     start_block = next_free_block
                     next_free_block += blocks_needed
                     total_allocated += blocks_needed
+                    assert next_free_block <= 25641, f"Catalog overflow: {next_free_block} > 25641 (would overwrite Catalog B-Tree!)"
 
                     # 1. Write payload
                     padded = uncompressed + b"\x00" * (blocks_needed * self.block - len(uncompressed))
@@ -678,6 +618,7 @@ class HFS:
             p_start_blk = next_free_block
             next_free_block += p_blocks
             total_allocated += p_blocks
+            assert next_free_block <= 25641, f"Catalog overflow: {next_free_block} > 25641"
 
             # Write payload to raw volume
             raw.seek(p_start_blk * self.block)
