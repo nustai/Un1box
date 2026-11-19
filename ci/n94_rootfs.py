@@ -229,6 +229,77 @@ class HFS:
         "/usr/libexec/securityd",
         "/usr/libexec/assertiond",
         "/usr/sbin/mediaserverd",
+        "/private/etc/master.passwd",
+        "/private/etc/passwd",
+        "/private/etc/group",
+        "/private/etc/hosts",
+        "/private/etc/services",
+        "/private/etc/fstab",
+        "/private/etc/notify.conf",
+        "/private/etc/ttys",
+        "/System/Library/CoreServices/prdaily",
+        "/System/Library/CoreServices/AssistiveTouch.app/assistivetouchd",
+        "/System/Library/CoreServices/CacheDeleteAppContainerCaches",
+        "/System/Library/CoreServices/CacheDeleteDaily",
+        "/System/Library/CoreServices/CacheDeleteITunesStore",
+        "/System/Library/CoreServices/CacheDeleteSystemFiles",
+        "/System/Library/CoreServices/DeviceOMatic.app/DeviceOMatic",
+        "/System/Library/CoreServices/EscrowSecurityAlert.app/EscrowSecurityAlert",
+        "/System/Library/CoreServices/MobileStorageMounter.app/MobileStorageMounter",
+        "/System/Library/CoreServices/VoiceOverTouch.app/scrod",
+        "/System/Library/CoreServices/VoiceOverTouch.app/vot",
+        "/System/Library/Frameworks/AddressBook.framework/Support/ABDatabaseDoctor",
+        "/System/Library/Frameworks/CoreTelephony.framework/Support/DMHelper",
+        "/System/Library/Frameworks/OpenGLES.framework/CVMCompiler",
+        "/System/Library/Frameworks/Security.framework/CircleJoinRequested/CircleJoinRequested",
+        "/System/Library/Frameworks/Security.framework/IDSKeychainSyncingProxy.bundle/IDSKeychainSyncingProxy",
+        "/System/Library/Frameworks/Security.framework/swcagent",
+        "/System/Library/Frameworks/UIKit.framework/Support/pasteboardd",
+        "/System/Library/PrivateFrameworks/AccountNotification.framework/and",
+        "/System/Library/PrivateFrameworks/AskPermission.framework/askpermissiond",
+        "/System/Library/PrivateFrameworks/AssetCacheServices.framework/XPCServices/AssetCacheLocatorService.xpc/AssetCacheLocatorService",
+        "/System/Library/PrivateFrameworks/AuthKit.framework/akd",
+        "/System/Library/PrivateFrameworks/CalendarDaemon.framework/Support/calaccessd",
+        "/System/Library/PrivateFrameworks/CameraUI.framework/Support/nebulad",
+        "/System/Library/PrivateFrameworks/CertUI.framework/certui_relay",
+        "/System/Library/PrivateFrameworks/CloudPhotoServices.framework/Support/CloudPhotoDerivativeGenerator",
+        "/System/Library/PrivateFrameworks/CoreCDP.framework/cdpd",
+        "/System/Library/PrivateFrameworks/CoreFollowUp.framework/followupd",
+        "/System/Library/PrivateFrameworks/CryptoTokenKit.framework/ctkd",
+        "/System/Library/PrivateFrameworks/FamilyCircle.framework/familycircled",
+        "/System/Library/PrivateFrameworks/FoundationODR.framework/ondemandd.bundle/ondemandd",
+        "/System/Library/PrivateFrameworks/IAP.framework/Support/iap2d",
+        "/System/Library/PrivateFrameworks/IAP.framework/Support/iapd",
+        "/System/Library/PrivateFrameworks/IAPAuthentication.framework/Support/iapauthd",
+        "/System/Library/PrivateFrameworks/IDSFoundation.framework/IDSRemoteURLConnectionAgent.app/IDSRemoteURLConnectionAgent",
+        "/System/Library/PrivateFrameworks/IMDPersistence.framework/IMAutomaticHistoryDeletionAgent.app/IMAutomaticHistoryDeletionAgent",
+        "/System/Library/PrivateFrameworks/IMFoundation.framework/IMLoggingAgent",
+        "/System/Library/PrivateFrameworks/IMTransferServices.framework/IMTransferAgent.app/IMTransferAgent",
+        "/System/Library/PrivateFrameworks/ManagedConfiguration.framework/Support/mdmd",
+        "/System/Library/PrivateFrameworks/ManagedConfiguration.framework/Support/teslad",
+        "/System/Library/PrivateFrameworks/MediaServices.framework/Support/mediaartworkd",
+        "/System/Library/PrivateFrameworks/MediaStream.framework/Support/mstreamd",
+        "/System/Library/PrivateFrameworks/MobileAccessoryUpdater.framework/Support/fud",
+        "/System/Library/PrivateFrameworks/PrintKit.framework/printd",
+        "/System/Library/PrivateFrameworks/QuickLookThumbnailing.framework/Support/com.apple.quicklook.ThumbnailsAgent",
+        "/System/Library/PrivateFrameworks/StoreBookkeeperClient.framework/Support/storebookkeeperd",
+        "/System/Library/PrivateFrameworks/UserActivity.framework/Agents/useractivityd",
+        "/System/Library/PrivateFrameworks/UserFS.framework/userfs_helper",
+        "/System/Library/PrivateFrameworks/UserFS.framework/userfsd",
+        "/System/Library/PrivateFrameworks/VoiceMemos.framework/Support/voicememod",
+        "/System/Library/PrivateFrameworks/WelcomeKit.framework/matd",
+        "/System/Library/PrivateFrameworks/iOSDiagnostics.framework/iosdiagnosticsd",
+        "/usr/bin/DumpBasebandCrash",
+        "/usr/bin/powerlogHelperd",
+        "/usr/bin/powerlogd",
+        "/usr/bin/sysdiagnose",
+        "/usr/sbin/BTAvrcp",
+        "/usr/sbin/BTMap",
+        "/usr/sbin/BTPbap",
+        "/usr/sbin/BlueTool",
+        "/usr/sbin/addNetworkInterface",
+        "/usr/sbin/aslmanager",
+        "/usr/sbin/mDNSResponderHelper",
         "/System/Library/LaunchDaemons/com.apple.SpringBoard.plist",
         "/System/Library/LaunchDaemons/com.apple.backboardd.plist",
         "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
@@ -274,7 +345,7 @@ class HFS:
             p = folder_path(parent) + (name,)
             if "SpringBoard" in name or "springboard" in name or "backboard" in name:
                 print(f"Catalog entry: p={p}, name={name}", flush=True)
-            if p in targets or name in wanted_plists:
+            if p in targets or name in wanted_plists or (len(p) >= 2 and p[0] == "usr" and p[1] == "libexec"):
                 cat_logical = node_id * self.node_size
                 cursor = 0
                 for ext_idx in range(8):
@@ -287,27 +358,70 @@ class HFS:
                         break
                     cursor += size_bytes
 
+        # Read all inline decmpfs xattrs from Attributes B-tree
+        header = self.disk.read(self.start + 1024, 512)
+        attr_desc = header[352:432]
+        attr_size = struct.unpack_from(">Q", attr_desc)[0]
+        xattrs_decmpfs = {}
+        if attr_size > 0:
+            attr_tree = self.fork(attr_desc, 0, 64)
+            attr_first_leaf = struct.unpack_from(">I", attr_tree, 24)[0]
+            attr_node_size = struct.unpack_from(">H", attr_tree, 32)[0]
+            node_id = attr_first_leaf
+            while node_id:
+                node = self.fork(attr_desc, node_id * attr_node_size, attr_node_size)
+                fwd, bwd, kind, height, rec_count = struct.unpack_from(">IIBBH", node, 0)
+                if kind == 255:
+                    for i in range(rec_count):
+                        rec_off = struct.unpack_from(">H", node, len(node) - 2 * (i + 1))[0]
+                        k_len = struct.unpack_from(">H", node, rec_off)[0]
+                        pad, file_id, start_blk, n_len = struct.unpack_from(">HIIH", node, rec_off + 2)
+                        aname = node[rec_off + 14:rec_off + 14 + n_len * 2].decode("utf-16-be", errors="replace")
+                        if aname == "com.apple.decmpfs":
+                            r_at = rec_off + 2 + k_len
+                            r_type = struct.unpack_from(">I", node, r_at)[0]
+                            if r_type == 0x10:
+                                d_len = struct.unpack_from(">I", node, r_at + 12)[0]
+                                xattrs_decmpfs[file_id] = node[r_at + 16:r_at + 16 + d_len]
+                node_id = fwd
+        print(f"Loaded {len(xattrs_decmpfs)} decmpfs xattrs from Attributes", flush=True)
+
         next_free_block = 24878
         total_allocated = 0
         exit0_fork = None
         with destination.open("r+b") as raw:
             for p, (rec_phys, rec, parent, name) in list(records.items()):
+                cnid = struct.unpack_from(">I", rec, 8)[0]
                 owner_flags = rec[41]
+                uncompressed = None
                 if owner_flags & 0x20:
                     res_desc = rec[168:248]
                     res_size = struct.unpack_from(">Q", res_desc, 0)[0]
-                    if not res_size:
-                        continue
-                    res_data = self.fork(res_desc, 0, res_size)
-                    data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
-                    rdata = res_data[data_off:data_off + data_len]
-                    num_chunks = struct.unpack_from("<I", rdata, 4)[0]
-                    uncompressed = bytearray()
-                    for i in range(num_chunks):
-                        offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
-                        uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
-                    if not name.endswith(".plist"):
-                        assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                    if res_size > 0:
+                        res_data = self.fork(res_desc, 0, res_size)
+                        data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
+                        rdata = res_data[data_off:data_off + data_len]
+                        num_chunks = struct.unpack_from("<I", rdata, 4)[0]
+                        uncompressed = bytearray()
+                        for i in range(num_chunks):
+                            offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
+                            uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
+                    elif cnid in xattrs_decmpfs:
+                        xdata = xattrs_decmpfs[cnid]
+                        if len(xdata) > 16:
+                            magic, comp_type, uncomp_size = struct.unpack_from("<IIQ", xdata, 0)
+                            payload = xdata[16:]
+                            if payload[:2] in (b"\x78\x5e", b"\x78\x9c", b"\x78\x01"):
+                                try:
+                                    uncompressed = bytearray(zlib.decompress(payload))
+                                except Exception:
+                                    uncompressed = bytearray(payload)
+                            else:
+                                uncompressed = bytearray(payload)
+                    if uncompressed is not None:
+                        is_config = name in ("master.passwd", "passwd", "group", "hosts", "services", "fstab", "notify.conf", "ttys") or name.endswith(".conf") or name.endswith(".plist")
+                        if not is_config and not name.endswith(".plist"):
+                            assert uncompressed[:4] in (b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xce", b"\xca\xfe\xba\xbe"), f"Invalid Mach-O magic for {name}"
 
                     if name == "fsck":
                         # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
