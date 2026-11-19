@@ -220,14 +220,15 @@ class HFS:
         "/usr/libexec/logd",
         "/usr/libexec/mtmergeprops",
         "/System/Library/CoreServices/DumpPanic",
-        "/System/Library/CoreServices/CrashHousekeeping",
+        "/System/Library/CoreServices/OTACrashCopier",
+        "/usr/libexec/CrashHousekeeping",
         "/usr/libexec/ptpd",
         "/usr/libexec/wifiFirmwareLoader",
         "/usr/sbin/mDNSResponder",
         "/usr/sbin/cfprefsd",
         "/usr/libexec/securityd",
         "/usr/libexec/assertiond",
-        "/usr/libexec/mediaserverd",
+        "/usr/sbin/mediaserverd",
         "/System/Library/LaunchDaemons/com.apple.SpringBoard.plist",
         "/System/Library/LaunchDaemons/com.apple.backboardd.plist",
         "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
@@ -350,25 +351,25 @@ class HFS:
                         helper = bytearray()
 
                         # 1. Compute r0 = new_envp buffer (0x8c00 in __DATA)
-                        imm = 0x8c00 - (cur + 4)
+                        imm = 0x8c00 - (cur + 8)
                         helper.extend(movw_imm(0, imm)); cur += 4
                         helper.extend(add_reg_pc(0)); cur += 2
                         helper.extend(bytes.fromhex("8446")); cur += 2  # mov ip, r0
 
                         # 2. Add str_avoid (0x7211)
-                        imm = 0x7211 - (cur + 4)
+                        imm = 0x7211 - (cur + 8)
                         helper.extend(movw_imm(1, imm)); cur += 4
                         helper.extend(add_reg_pc(1)); cur += 2
                         helper.extend(bytes.fromhex("40f8041b")); cur += 4  # str.w r1, [r0], #4
 
                         # 3. Add str_direct (0x7230)
-                        imm = 0x7230 - (cur + 4)
+                        imm = 0x7230 - (cur + 8)
                         helper.extend(movw_imm(1, imm)); cur += 4
                         helper.extend(add_reg_pc(1)); cur += 2
                         helper.extend(bytes.fromhex("40f8041b")); cur += 4  # str.w r1, [r0], #4
 
                         # 4. Add str_nano (0x724a)
-                        imm = 0x724a - (cur + 4)
+                        imm = 0x724a - (cur + 8)
                         helper.extend(movw_imm(1, imm)); cur += 4
                         helper.extend(add_reg_pc(1)); cur += 2
                         helper.extend(bytes.fromhex("40f8041b")); cur += 4  # str.w r1, [r0], #4
@@ -421,7 +422,12 @@ class HFS:
                         # 3. Hook bl #0x5b82 at file offset 0x2422 (virtual 0x6422) replacing stm.w sp, {r8, fp}
                         assert uncompressed[0x2422:0x2426] == bytes.fromhex("8de80009"), "xpcproxy 0x2422 mismatch"
                         uncompressed[0x2422:0x2426] = bytes.fromhex("fff7aefb")
-                        print("Patched xpcproxy (uid=0 root spawn + direct posix_spawn envp injection)", flush=True)
+
+                        # 4. Patch 0x6436 (file off 0x2436) to branch unconditionally to 0x6478: b #0x6478
+                        # Bypasses 0x16 abort handler so failed daemon spawns never kill xpcproxy
+                        assert uncompressed[0x2436:0x2438] == bytes.fromhex("47d8"), "xpcproxy 0x2436 mismatch"
+                        uncompressed[0x2436:0x2438] = bytes.fromhex("1fe0")
+                        print("Patched xpcproxy (uid=0 root spawn + direct posix_spawn envp injection + 0x16 trap bypass)", flush=True)
                 else:
                     uncompressed = None
 
