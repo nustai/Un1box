@@ -229,6 +229,13 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.AppleNANDConfigAccess',
         b'com.apple.driver.EmbeddedIOP',
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
+        b'com.apple.iokit.IOSurface',
+        b'com.apple.driver.AppleM2ScalerCSCDriver',
+        b'com.apple.iokit.IOMobileGraphicsFamily',
+        b'com.apple.driver.AppleH4PCLCD',
+        b'com.apple.driver.AppleSamsungSPI',
+        b'com.apple.driver.AppleMultitouchSPI',
+        b'com.apple.driver.AppleMultitouchSPIN1F56',
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
     replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
