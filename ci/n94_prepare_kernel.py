@@ -873,8 +873,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     # still need guest validation; run the same probe with versions 2 and 3.
     args = struct.pack("<HH", 1, version)
     args += u32(RAM, RAM, RAM_SIZE, top)
-    args += u32(framebuffer, 0, 640 * 4, 640, 960, 32)
-    args += u32(0, dt_pa, len(cooked_dt))
+    args += u32(framebuffer, 1, 640 * 4, 640, 960, 32)
+    args += u32(0x8940, dt_pa, len(cooked_dt))
     args += command.ljust(256, b"\0") + u32(0, RAM_SIZE)
     image = bytearray(top - RAM)
     for _, address, _, fileoff, filesize in segments:
