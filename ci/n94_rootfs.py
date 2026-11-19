@@ -239,6 +239,7 @@ class HFS:
         "/usr/libexec/atwakeup",
         "/usr/libexec/hpfd",
         "/System/Library/CoreServices/prdaily",
+        "/System/Library/CoreServices/SpringBoard.app/Info.plist",
         "/System/Library/LaunchDaemons/com.apple.SpringBoard.plist",
         "/System/Library/LaunchDaemons/com.apple.backboardd.plist",
         "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
@@ -370,6 +371,9 @@ class HFS:
                         # Patch main at 0x1f18 to return 0 immediately: movs r0, #0; bx lr; nop; nop
                         uncompressed[0x1f18:0x1f20] = bytes.fromhex("0020704700bf00bf")
                         print("Patched mobile_obliterator at 0x1f18 to exit 0", flush=True)
+                    elif name == "fstab":
+                        uncompressed = bytearray(b"# /etc/fstab\n")
+                        print("Patched fstab on disk (empty/commented to prevent missing disk0s2 mount failure)", flush=True)
                     elif name == "xpcproxy":
                         # 1. Patch 0x5b80 (file off 0x1b80) to branch unconditionally to 0x5bfa: b #0x5bfa
                         # Bypasses getpwnam/getgrnam failure, running daemons as root (uid=0, gid=0)
@@ -484,7 +488,7 @@ class HFS:
                 else:
                     uncompressed = None
 
-                if name.endswith(".plist"):
+                if name.endswith(".plist") and (name in wanted_plists or "LaunchDaemons" in p):
                     try:
                         raw_plist = uncompressed
                         if raw_plist is None:
