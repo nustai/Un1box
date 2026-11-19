@@ -223,12 +223,14 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             diagnostic_no_secure_root=False, diagnostic_single_cpu=False,
             diagnostic_no_tv_out=False, diagnostic_no_vxe=False, diagnostic_no_sgx=False,
             diagnostic_no_jpeg=False):
-    kexts_to_enable = (
+    storage_kexts = (
         b'com.apple.driver.IOSlaveProcessor',
         b'com.apple.iokit.IOFlashStorage',
         b'com.apple.driver.AppleNANDConfigAccess',
         b'com.apple.driver.EmbeddedIOP',
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
+    )
+    display_touch_kexts = (
         b'com.apple.iokit.IOSurface',
         b'com.apple.driver.AppleM2ScalerCSCDriver',
         b'com.apple.iokit.IOMobileGraphicsFamily',
@@ -237,8 +239,9 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.AppleMultitouchSPIN1F56',
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
-    replacement = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
-    for kext_id in kexts_to_enable:
+    replacement_local = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
+    replacement_root  = b'<key>OSBundleRequired</key><string>Root</string>         '
+    for kext_id, repl in [(k, replacement_local) for k in storage_kexts] + [(k, replacement_root) for k in display_touch_kexts]:
         target = b'<key>CFBundleIdentifier</key><string>' + kext_id + b'</string>'
         pos = kernel.find(target)
         if pos != -1:
@@ -246,7 +249,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
             dend = kernel.find(b'</dict></dict>', pos)
             dtsdk_pos = kernel.find(dtsdk, dstart, dend)
             if dtsdk_pos != -1:
-                kernel = kernel[:dtsdk_pos] + replacement + kernel[dtsdk_pos + len(replacement):]
+                kernel = kernel[:dtsdk_pos] + repl + kernel[dtsdk_pos + len(repl):]
     iop_match = b'<key>IOPropertyMatch</key><dict><key>role</key><string>IOP</string></dict>'
     p1 = kernel.find(iop_match)
     if p1 != -1:
