@@ -722,6 +722,18 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         assert len(mac_enforce_repl) == len(mac_enforce_target), f"Byte length mismatch: {len(mac_enforce_repl)} != {len(mac_enforce_target)}"
         kernel = kernel[:p46] + mac_enforce_repl + kernel[p46 + len(mac_enforce_target):]
 
+    # vfs_mountroot: mount rootfs read-write (MNT_RDWR = 0) while preserving MNT_LOCAL (0x1000)
+    # Target at 0x800f3e56: ldr.w fp, [r0, #0x288]; adds r0, r6, #1 (701c); bic r0, r0, #0x12000000
+    # Replace adds r0, r6, #1 (701c) with mov r0, r6 (3046) so MNT_RDONLY (bit 0) is never added,
+    # leaving MNT_LOCAL intact (avoiding dyld SIGTRAP).
+    mountroot_target = bytes.fromhex('d0f888b2701c20f09050')
+    p47 = kernel.find(mountroot_target)
+    if p47 != -1:
+        mountroot_repl = bytes.fromhex('d0f888b2304620f09050')
+        assert len(mountroot_repl) == len(mountroot_target), f"Byte length mismatch: {len(mountroot_repl)} != {len(mountroot_target)}"
+        kernel = kernel[:p47] + mountroot_repl + kernel[p47 + len(mountroot_target):]
+        print(f"Patched vfs_mountroot at {p47:#x} (preserve MNT_LOCAL, mount root read-write)", flush=True)
+
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:

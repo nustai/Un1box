@@ -543,8 +543,145 @@ class HFS:
                         raw.write(exit0_fork)
                         print(f"Assigned exit-0 stub to {name}", flush=True)
 
+            # Inject com.apple.purplebuddy.plist into /private/var/mobile/Library/Preferences (replacing ProxiedCrashCopier)
+            purple_plist = b"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>SetupDone</key>
+    <true/>
+    <key>SetupFinishedAllSteps</key>
+    <true/>
+</dict>
+</plist>"""
+            p_blocks = (len(purple_plist) + self.block - 1) // self.block
+            p_start_blk = next_free_block
+            next_free_block += p_blocks
+            total_allocated += p_blocks
+
+            # Write payload to raw volume
+            raw.seek(p_start_blk * self.block)
+            raw.write(purple_plist + b"\x00" * (p_blocks * self.block - len(purple_plist)))
+
+            # Update allocation bitmap
+            for blk in range(p_start_blk, p_start_blk + p_blocks):
+                byte_pos = self.block + (blk // 8)
+                bit_pos = 7 - (blk % 8)
+                raw.seek(byte_pos)
+                cur_b = raw.read(1)[0]
+                raw.seek(byte_pos)
+                raw.write(bytes([cur_b | (1 << bit_pos)]))
+
+            # Modify node 1871 in catalog B-Tree
+            cat_logical = 1871 * self.node_size
+            node_phys = None
+            cursor = 0
+            for ext_idx in range(8):
+                start_blk, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                size_bytes = count_blk * self.block
+                if cursor <= cat_logical < cursor + size_bytes:
+                    node_phys = (start_blk * self.block) + (cat_logical - cursor)
+                    break
+                cursor += size_bytes
+
+            if node_phys:
+                raw.seek(node_phys)
+                node_data = bytearray(raw.read(self.node_size))
+                recs_count = struct.unpack_from(">H", node_data, 10)[0]
+                offsets = [struct.unpack_from(">H", node_data, len(node_data) - 2 * (i + 1))[0] for i in range(recs_count)]
+
+                def get_rec_len(at):
+                    klen = struct.unpack_from(">H", node_data, at)[0]
+                    rec_type = struct.unpack_from(">H", node_data, at + 2 + klen)[0]
+                    if rec_type in (1, 2):
+                        data_len = 248
+                    elif rec_type in (3, 4):
+                        t_namelen = struct.unpack_from(">H", node_data, at + 2 + klen + 8)[0]
+                        data_len = 10 + t_namelen * 2
+                    else:
+                        raise ValueError(f"Unknown rec_type: {rec_type}")
+                    return 2 + klen + data_len
+
+                rec43_off = offsets[43]
+                klen_old = struct.unpack_from(">H", node_data, rec43_off)[0]
+                data_part = bytearray(node_data[rec43_off + 2 + klen_old : rec43_off + 2 + klen_old + 248])
+
+                # Update data fork
+                fork_data = struct.pack(">QIIII", len(purple_plist), p_blocks * self.block,
+                                        p_blocks, p_start_blk, p_blocks) + b"\x00" * 56
+                data_part[88:168] = fork_data
+                # Clear UF_COMPRESSED (bit 0x20 in owner_flags at offset 41)
+                data_part[41] = data_part[41] & ~0x20
+
+                # Build new record
+                new_name = "com.apple.purplebuddy.plist"
+                new_name_utf16 = new_name.encode("utf-16-be")
+                new_klen = 4 + 2 + len(new_name_utf16)
+                new_key = struct.pack(">HIH", new_klen, 46705, len(new_name)) + new_name_utf16
+                new_rec = new_key + bytes(data_part)
+
+                old_rec_len = 2 + klen_old + 248
+                new_rec_len = len(new_rec)
+                delta = old_rec_len - new_rec_len
+
+                following_start = offsets[44]
+                last_rec_len = get_rec_len(offsets[-1])
+                following_end = offsets[-1] + last_rec_len
+                following_data = bytes(node_data[following_start : following_end])
+
+                # Write new rec and shift following data
+                node_data[rec43_off : rec43_off + len(new_rec)] = new_rec
+                new_following_start = rec43_off + len(new_rec)
+                node_data[new_following_start : new_following_start + len(following_data)] = following_data
+                node_data[new_following_start + len(following_data) : new_following_start + len(following_data) + delta] = b"\x00" * delta
+
+                # Update offsets
+                for i in range(44, recs_count):
+                    offsets[i] -= delta
+                    struct.pack_into(">H", node_data, len(node_data) - 2 * (i + 1), offsets[i])
+
+                raw.seek(node_phys)
+                raw.write(node_data)
+                print("Injected com.apple.purplebuddy.plist (SetupDone=true) into /private/var/mobile/Library/Preferences", flush=True)
+
+            # Update /private/var/db/timezone/localtime symlink target to point directly to default US/Pacific
+            tz_target = b"/usr/share/zoneinfo.default/US/Pacific"
+            raw.seek(36905 * self.block)
+            raw.write(tz_target + b"\x00" * (self.block - len(tz_target)))
+            # Update record in node 4392
+            cat_logical_tz = 4392 * self.node_size
+            node_phys_tz = None
+            cursor = 0
+            for ext_idx in range(8):
+                start_blk, count_blk = struct.unpack_from(">II", self.catalog, 16 + ext_idx * 8)
+                size_bytes = count_blk * self.block
+                if cursor <= cat_logical_tz < cursor + size_bytes:
+                    node_phys_tz = (start_blk * self.block) + (cat_logical_tz - cursor)
+                    break
+                cursor += size_bytes
+            if node_phys_tz:
+                raw.seek(node_phys_tz)
+                tz_node = bytearray(raw.read(self.node_size))
+                tz_recs = struct.unpack_from(">H", tz_node, 10)[0]
+                tz_offs = [struct.unpack_from(">H", tz_node, len(tz_node) - 2 * (i + 1))[0] for i in range(tz_recs)]
+                for at in tz_offs:
+                    klen, parent, count = struct.unpack_from(">HIH", tz_node, at)
+                    name = tz_node[at + 8:at + 8 + count * 2].decode("utf-16-be", errors="replace")
+                    if name == "localtime":
+                        rec_phys = at + 2 + klen
+                        # Update data fork size to len(tz_target)
+                        struct.pack_into(">Q", tz_node, rec_phys + 88, len(tz_target))
+                        raw.seek(node_phys_tz)
+                        raw.write(tz_node)
+                        print("Updated /private/var/db/timezone/localtime -> /usr/share/zoneinfo.default/US/Pacific", flush=True)
+                        break
+
             # 5. Update volume headers
             for h_off in (1024, self.size - 1024):
+                raw.seek(h_off + 4)
+                cur_attrs = struct.unpack(">I", raw.read(4))[0]
+                raw.seek(h_off + 4)
+                raw.write(struct.pack(">I", cur_attrs & ~0x2000))  # Clear kHFSVolumeSoftwareLockMask
                 raw.seek(h_off + 48)
                 cur_free = struct.unpack(">I", raw.read(4))[0]
                 raw.seek(h_off + 48)
