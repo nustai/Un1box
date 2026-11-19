@@ -722,20 +722,24 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         assert len(mac_enforce_repl) == len(mac_enforce_target), f"Byte length mismatch: {len(mac_enforce_repl)} != {len(mac_enforce_target)}"
         kernel = kernel[:p46] + mac_enforce_repl + kernel[p46 + len(mac_enforce_target):]
     # vfs_mountroot: mount rootfs read-write (MNT_RDWR = 0) instead of read-only (MNT_RDONLY = 1)
-    # Target 1 at 0x8020424e: movw r0, #0xded4; movs r1, #1 -> movs r1, #0
-    mountroot_target1 = bytes.fromhex('4df6d4600121c0f220006e91')
+    # Target 1 at 0x800f2e56: ldr.w fp, [r0, #0x288]; adds r0, r6, #1; bic r0, r0, #0x12000000
+    mountroot_target1 = bytes.fromhex('d0f888b2701c20f09050')
     p47 = kernel.find(mountroot_target1)
     if p47 != -1:
-        mountroot_repl1 = bytes.fromhex('4df6d4600021c0f220006e91')
+        # Replace adds r0, r6, #1 (701c) with movs r0, #0 (0020) to prevent forcing MNT_RDONLY
+        mountroot_repl1 = bytes.fromhex('d0f888b2002020f09050')
         assert len(mountroot_repl1) == len(mountroot_target1), f"Byte length mismatch: {len(mountroot_repl1)} != {len(mountroot_target1)}"
         kernel = kernel[:p47] + mountroot_repl1 + kernel[p47 + len(mountroot_target1):]
-    # Target 2 at 0x80204282: movw r0, #0xdea0; movs r1, #1 -> movs r1, #0
-    mountroot_target2 = bytes.fromhex('4df6a0600121c0f220002391')
+        print(f"Patched vfs_mountroot flags at {p47:#x} (force read-write root mount)", flush=True)
+    # Target 2 at 0x800f2f70: ldr r1, [r0, #8]; orr r1, r1, #0x4000; str r1, [r0, #8]
+    mountroot_target2 = bytes.fromhex('816841f480418160')
     p48 = kernel.find(mountroot_target2)
     if p48 != -1:
-        mountroot_repl2 = bytes.fromhex('4df6a0600021c0f220002391')
+        # Replace orr r1, r1, #0x4000 (41f48041) with mov.w r1, #0x4000 (4ff48041) to ensure MNT_RDONLY bit 0 is cleared
+        mountroot_repl2 = bytes.fromhex('81684ff480418160')
         assert len(mountroot_repl2) == len(mountroot_target2), f"Byte length mismatch: {len(mountroot_repl2)} != {len(mountroot_target2)}"
         kernel = kernel[:p48] + mountroot_repl2 + kernel[p48 + len(mountroot_target2):]
+        print(f"Patched vfs_mountroot MNT_ROOTFS at {p48:#x} (clear MNT_RDONLY bit)", flush=True)
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
     if end != len(raw_dt) or dt.encode() != raw_dt:
