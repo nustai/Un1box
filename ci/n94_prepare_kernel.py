@@ -233,7 +233,6 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.AppleM2ScalerCSCDriver',
         b'com.apple.iokit.IOMobileGraphicsFamily',
         b'com.apple.driver.AppleH4PCLCD',
-        b'com.apple.driver.AppleSamsungSPI',
         b'com.apple.driver.AppleMultitouchSPI',
         b'com.apple.driver.AppleMultitouchSPIN1F56',
     )
