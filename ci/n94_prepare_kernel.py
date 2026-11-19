@@ -231,10 +231,15 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.driver.IOP_s5l8940xiop_firmware',
     )
     display_touch_kexts = (
+        b'com.apple.iokit.IOStreamAudioFamily',
+        b'com.apple.iokit.IOAudio2Family',
+        b'com.apple.iokit.IOCECFamily',
         b'com.apple.iokit.IOSurface',
         b'com.apple.driver.AppleM2ScalerCSCDriver',
         b'com.apple.iokit.IOMobileGraphicsFamily',
         b'com.apple.driver.AppleH4PCLCD',
+        b'com.apple.driver.ApplePinotLCD',
+        b'com.apple.driver.AppleH4PRGBOUT',
         b'com.apple.driver.AppleMultitouchSPI',
         b'com.apple.driver.AppleMultitouchSPIN1F56',
     )
@@ -245,8 +250,15 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         target = b'<key>CFBundleIdentifier</key><string>' + kext_id + b'</string>'
         pos = kernel.find(target)
         if pos != -1:
-            dstart = kernel.rfind(b'<dict>', 0, pos)
-            dend = kernel.find(b'</dict></dict>', pos)
+            sep_before = kernel.rfind(b'</dict><dict>', 0, pos)
+            if sep_before != -1:
+                dstart = sep_before + len(b'</dict>')
+            else:
+                dstart = kernel.rfind(b'<array><dict>', 0, pos) + len(b'<array>')
+            dend = kernel.find(b'</dict><dict>', pos)
+            if dend == -1:
+                dend = kernel.find(b'</dict></array>', pos)
+            dend += len(b'</dict>')
             dtsdk_pos = kernel.find(dtsdk, dstart, dend)
             if dtsdk_pos != -1:
                 kernel = kernel[:dtsdk_pos] + repl + kernel[dtsdk_pos + len(repl):]
