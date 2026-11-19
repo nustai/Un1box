@@ -424,7 +424,7 @@ def main():
     versions = (int(target_version),) if target_version in ('2', '3') else (2, 3)
     for version in versions:
         probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
-              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 600))
+              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 1800))
 
 
 if __name__ == "__main__":

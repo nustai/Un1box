@@ -292,46 +292,7 @@ class HFS:
         with destination.open("r+b") as raw:
             for p, (rec_phys, rec, parent, name) in list(records.items()):
                 owner_flags = rec[41]
-                uncompressed = None
-                if name.endswith(".plist"):
-                    try:
-                        raw_plist = None
-                        if owner_flags & 0x20:
-                            res_desc = rec[168:248]
-                            res_size = struct.unpack_from(">Q", res_desc, 0)[0]
-                            if res_size > 0:
-                                res_data = self.fork(res_desc, 0, res_size)
-                                data_off, map_off, data_len, map_len = struct.unpack_from(">4I", res_data, 0)
-                                rdata = res_data[data_off:data_off + data_len]
-                                if len(rdata) >= 8:
-                                    num_chunks = struct.unpack_from("<I", rdata, 4)[0]
-                                    uncomp = bytearray()
-                                    for i in range(num_chunks):
-                                        offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
-                                        uncomp.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
-                                    raw_plist = uncomp
-                        if raw_plist is None:
-                            data_size = struct.unpack_from(">Q", rec, 88)[0]
-                            if data_size > 0:
-                                start_blk = struct.unpack_from(">I", rec, 88 + 16)[0]
-                                raw.seek(start_blk * self.block)
-                                raw_plist = raw.read(data_size)
-                        if raw_plist:
-                            p_dict = plistlib.loads(raw_plist.strip(b"\x00"))
-                            print(f"Loaded {name} (path: {'/'.join(p)}): Label={p_dict.get('Label')}, RunAtLoad={p_dict.get('RunAtLoad')}, KeepAlive={p_dict.get('KeepAlive')}", flush=True)
-                            p_dict["RunAtLoad"] = True
-                            p_dict["KeepAlive"] = True
-                            if "Disabled" in p_dict:
-                                p_dict["Disabled"] = False
-                            if "MachServices" in p_dict and isinstance(p_dict["MachServices"], dict):
-                                for s_name, s_val in list(p_dict["MachServices"].items()):
-                                    if isinstance(s_val, dict) and "HideUntilCheckIn" in s_val:
-                                        s_val["HideUntilCheckIn"] = False
-                            uncompressed = bytearray(plistlib.dumps(p_dict))
-                            print(f"Patched {name} on disk (RunAtLoad=True, KeepAlive=True, {len(uncompressed)} bytes)", flush=True)
-                    except Exception as e:
-                        print(f"Failed to process {name}: {e}", flush=True)
-                elif owner_flags & 0x20:
+                if owner_flags & 0x20:
                     res_desc = rec[168:248]
                     res_size = struct.unpack_from(">Q", res_desc, 0)[0]
                     if not res_size:
@@ -344,7 +305,8 @@ class HFS:
                     for i in range(num_chunks):
                         offset, length = struct.unpack_from("<II", rdata, 8 + i * 8)
                         uncompressed.extend(zlib.decompress(rdata[4 + offset : 4 + offset + length]))
-                    assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
+                    if not name.endswith(".plist"):
+                        assert uncompressed[:4] == b"\xce\xfa\xed\xfe", f"Invalid Mach-O magic for {name}"
 
                     if name == "fsck":
                         # Patch main at 0x2a34 to return 0 immediately: movs r0, #0; bx lr; nop; nop
@@ -460,6 +422,28 @@ class HFS:
                         assert uncompressed[0x2422:0x2426] == bytes.fromhex("8de80009"), "xpcproxy 0x2422 mismatch"
                         uncompressed[0x2422:0x2426] = bytes.fromhex("fff7aefb")
                         print("Patched xpcproxy (uid=0 root spawn + direct posix_spawn envp injection)", flush=True)
+                else:
+                    uncompressed = None
+
+                if name.endswith(".plist"):
+                    try:
+                        raw_plist = uncompressed
+                        if raw_plist is None:
+                            data_size = struct.unpack_from(">Q", rec, 88)[0]
+                            start_blk = struct.unpack_from(">I", rec, 88 + 16)[0]
+                            raw.seek(start_blk * self.block)
+                            raw_plist = raw.read(data_size)
+                        p_dict = plistlib.loads(raw_plist.strip(b"\x00"))
+                        print(f"Loaded {name} (path: {'/'.join(p)}): Label={p_dict.get('Label')}, RunAtLoad={p_dict.get('RunAtLoad')}, KeepAlive={p_dict.get('KeepAlive')}", flush=True)
+                        p_dict["RunAtLoad"] = True
+                        p_dict["KeepAlive"] = True
+                        if "Disabled" in p_dict:
+                            p_dict["Disabled"] = False
+                        uncompressed = bytearray(plistlib.dumps(p_dict))
+                        print(f"Patched {name} on disk (RunAtLoad=True, KeepAlive=True, {len(uncompressed)} bytes)", flush=True)
+                    except Exception as e:
+                        print(f"Failed to process {name}: {e}", flush=True)
+
                 if uncompressed is not None:
                     blocks_needed = (len(uncompressed) + self.block - 1) // self.block
                     start_block = next_free_block
