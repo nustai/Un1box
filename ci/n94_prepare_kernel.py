@@ -827,14 +827,33 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         pass
     try:
         clcd = dt.at("arm-io/clcd")
+        clcd.set("name", b"clcd,s5l8940x\0")
         clcd.set("IOName", b"clcd,s5l8940x\0")
+        clcd.set("compatible", b"clcd,s5l8940x\0")
     except (KeyError, ValueError, StopIteration):
         pass
     try:
         lcd = dt.at("arm-io/mipi-dsim/lcd")
+        lcd.set("name", b"lcd,pinot\0")
         lcd.set("lcd-panel-id", u32(0x0969e5a1))
         lcd.set("raw-panel-id", b"\xa1\xe5\x69\x09" + b"\x00" * 12)
         lcd.set("IOName", b"lcd,pinot\0")
+        lcd.set("compatible", b"lcd,pinot\0")
+    except (KeyError, ValueError, StopIteration):
+        pass
+    for scaler_name in ("arm-io/scaler0", "arm-io/scaler1"):
+        try:
+            scaler = dt.at(scaler_name)
+            scaler.set("name", b"scaler,s5l8720x\0")
+            scaler.set("IOName", b"scaler,s5l8720x\0")
+            scaler.set("compatible", b"scaler,s5l8720x\0")
+        except (KeyError, ValueError, StopIteration):
+            pass
+    try:
+        rgbout = dt.at("arm-io/rgbout")
+        rgbout.set("name", b"rgbout,s5l8940x\0")
+        rgbout.set("IOName", b"rgbout,s5l8940x\0")
+        rgbout.set("compatible", b"rgbout,s5l8940x\0")
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
