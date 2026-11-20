@@ -36,9 +36,9 @@ on:
         type: boolean
         default: true
       probe_seconds:
-        description: Maximum duration of the diagnostic probe in seconds (default 900)
+        description: Maximum duration of the diagnostic probe in seconds (default 180)
         type: string
-        default: '900'
+        default: '180'
 
 permissions:
   contents: read

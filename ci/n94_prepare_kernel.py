@@ -826,9 +826,15 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     except (KeyError, ValueError, StopIteration):
         pass
     try:
+        clcd = dt.at("arm-io/clcd")
+        clcd.set("IOName", b"clcd,s5l8940x\0")
+    except (KeyError, ValueError, StopIteration):
+        pass
+    try:
         lcd = dt.at("arm-io/mipi-dsim/lcd")
         lcd.set("lcd-panel-id", u32(0x0969e5a1))
         lcd.set("raw-panel-id", b"\xa1\xe5\x69\x09" + b"\x00" * 12)
+        lcd.set("IOName", b"lcd,pinot\0")
     except (KeyError, ValueError, StopIteration):
         pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
