@@ -102,13 +102,17 @@ def probe(binary, bundle, output, seconds):
                         return reply
                     qtest_command('writel 0x39200050 0x1')
                     qtest_command('writel 0x39200060 0x03c00280')
-                    observed = [qtest_command('readl 0x39200050'), qtest_command('readl 0x39200060')]
+                    qtest_command('writel 0x3a10102c 0xffffffff')
+                    qtest_command('writel 0x3a101028 0x1fa42')
+                    qtest_command('writel 0x3a101038 0x00000201')
+                    observed = [qtest_command('readl 0x39200050'), qtest_command('readl 0x39200060'),
+                                qtest_command('readl 0x3a101028'), qtest_command('readl 0x3a101038')]
                     values = [int(reply.split()[1], 0) for reply in observed]
-                    if values != [1, 0x03c00280]:
+                    if values != [1, 0x03c00280, 0x1fa42, 0x00000201]:
                         raise RuntimeError(f'CLCD diagnostic writes did not read back: {observed}')
                     (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
                         'diagnostic_only': True, 'physical_base': '0x39200000',
-                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280'},
+                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280', '0x3a101028': '0x1fa42', '0x3a101038': '0x201'},
                         'observed': observed}, indent=2))
             if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
@@ -240,6 +244,20 @@ def probe(binary, bundle, output, seconds):
                     if values and int(values[-1], 16) >= 0x80000000:
                         snapshot["clock_mapping"] = qmp("human-monitor-command", {"command-line": "gva2gpa " + values[-1]})
                     snapshot["aic_counter_low"] = qmp("human-monitor-command", {"command-line": "xp /1wx 0x3f200020"})
+                if sample in (50, 100, 200):
+                    try:
+                        m_pc = re.search(r'R15=([0-9a-fA-F]{8})', registers)
+                        if m_pc:
+                            pc_val = int(m_pc.group(1), 16)
+                            snapshot['disasm_pc'] = qmp('human-monitor-command', {
+                                'command-line': f'x /16i 0x{pc_val:x}'})
+                        m_sp = re.search(r'R13=([0-9a-fA-F]{8})', registers)
+                        if m_sp:
+                            sp_val = int(m_sp.group(1), 16)
+                            snapshot['stack_sp'] = qmp('human-monitor-command', {
+                                'command-line': f'x /32wx 0x{sp_val:x}'})
+                    except Exception:
+                        pass
                 snapshots.append(snapshot)
                 if serial.exists():
                     uart_text = serial.read_text(errors='replace')
@@ -268,11 +286,15 @@ def probe(binary, bundle, output, seconds):
                                 try:
                                     fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
                                     m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
-                                    if m_fb:
-                                        cur_fb = int(m_fb.group(1), 16)
-                                        if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
-                                            qmp('human-monitor-command', {'command-line':
-                                                         f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
+                                    cur_fb = int(m_fb.group(1), 16) if m_fb else 0
+                                    if not (0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000):
+                                        fb_val2 = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a105048'})
+                                        m_fb2 = re.search(r'0x([0-9a-fA-F]+)', fb_val2.split(':')[-1] if ':' in fb_val2 else '')
+                                        if m_fb2:
+                                            cur_fb = int(m_fb2.group(1), 16)
+                                    if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                                        qmp('human-monitor-command', {'command-line':
+                                                     f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
                                 except Exception:
                                     pass
                                 (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
@@ -301,11 +323,15 @@ def probe(binary, bundle, output, seconds):
             try:
                 fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
                 m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
-                if m_fb:
-                    cur_fb = int(m_fb.group(1), 16)
-                    if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
-                        qmp('human-monitor-command', {'command-line':
-                                     f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
+                cur_fb = int(m_fb.group(1), 16) if m_fb else 0
+                if not (0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000):
+                    fb_val2 = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a105048'})
+                    m_fb2 = re.search(r'0x([0-9a-fA-F]+)', fb_val2.split(':')[-1] if ':' in fb_val2 else '')
+                    if m_fb2:
+                        cur_fb = int(m_fb2.group(1), 16)
+                if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                    qmp('human-monitor-command', {'command-line':
+                                 f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
             except Exception:
                 pass
             stream.write(b'{"execute":"quit"}\n')

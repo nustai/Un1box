@@ -125,6 +125,15 @@ jobs:
                   png = p.with_suffix('.png')
                   Image.open(p).save(png)
                   print(f'Rendered {png}')
+              for raw in pathlib.Path('n94-traces').rglob('*framebuffer.raw'):
+                  if raw.is_file() and raw.stat().st_size == 2457600:
+                      data = raw.read_bytes()
+                      try:
+                          Image.frombytes('RGBA', (640, 960), data, 'raw', 'BGRA').save(raw.with_name(raw.stem + '-bgra.png'))
+                          Image.frombytes('RGBA', (640, 960), data, 'raw', 'RGBA').save(raw.with_name(raw.stem + '-rgba.png'))
+                          print(f'Rendered {raw.name} to PNGs')
+                      except Exception as ex:
+                          print('Raw FB convert note:', ex)
           except Exception as e:
               print('PNG render note:', e)
           "
