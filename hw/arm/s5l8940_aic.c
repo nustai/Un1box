@@ -78,7 +78,10 @@ static void s5l8940_aic_update(S5L8940AICState *s)
                  * Bit 0 routes to CPU0, Bit 1 routes to CPU1.
                  * TODO(n94): AIC target-destinations hardware register behavior
                  */
-                uint32_t dest = s->priority[irq_idx] >> 16;
+                uint32_t dest = (s->priority[irq_idx] >> 16) & 0x3;
+                if (!dest) {
+                    dest = s->priority[irq_idx] & 0x3;
+                }
                 if (!dest) {
                     dest = s->target[i];
                 }
@@ -148,7 +151,7 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
     S5L8940AICState *s = opaque;
     uint32_t val = 0;
     uint32_t word_idx = (offset / 4) % S5L8940_AIC_REG_WORDS;
-    if (offset != 0x20 && offset != 0x28 && s->diagnostic_accesses++ < 2048) {
+    if (offset != 0x20 && offset != 0x28 && offset != 0x2004 && s->diagnostic_accesses++ < 2048) {
         qemu_log_mask(LOG_UNIMP, "n94 AIC read +0x%" HWADDR_PRIx "\n", offset);
     }
 
@@ -173,7 +176,7 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
 
     switch (offset) {
     case 0x00: /* CPU WhoAmI (returns 0 for primary core) */
-        val = 0;
+        val = (current_cpu && current_cpu->cpu_index == 1) ? 1 : 0;
         break;
     case 0x04:
         /* Stock AppleInterruptController::start reads INFO at +4 twice:
@@ -191,14 +194,63 @@ static uint64_t s5l8940_aic_read(void *opaque, hwaddr offset, unsigned size)
     case 0x84: /* Target / affinity register 1 (DeviceTree target-destinations: 0x8b -> CPU1) */
         val = s->target_destinations[2];
         break;
-    case 0x88 ... 0x8c: /* AIC_INT_PENDING */
-        val = s->pending[(offset - 0x80) / 4];
+    case 0x88 ... 0x9c: /* AIC_INT_PENDING legacy (6 banks) */
+        val = s->pending[(offset - 0x88) / 4];
         break;
-    case 0x100 ... 0x10c: /* AIC_INT_ENABLE[0..3] */
+    case 0x100 ... 0x114: /* AIC_INT_ENABLE legacy[0..5] */
         val = s->enabled[(offset - 0x100) / 4];
         break;
-    case 0x140 ... 0x33c: /* AIC_INT_PRIORITY[0..127] */
+    case 0x140 ... 0x33c: /* AIC_INT_PRIORITY legacy[0..127] */
         val = s->priority[(offset - 0x140) / 4];
+        break;
+    case 0x2000: /* IPI status register */
+        val = 0;
+        break;
+    case 0x2004: { /* Pending Interrupt Vector register */
+        int cpu = current_cpu ? current_cpu->cpu_index : 0;
+        if (cpu < 0 || cpu > 1) {
+            cpu = 0;
+        }
+        uint32_t cpu_mask = (1U << cpu);
+        val = 0;
+        for (int i = 0; i < S5L8940_AIC_BANKS; i++) {
+            uint32_t active = s->pending[i] & s->enabled[i];
+            if (!active) {
+                continue;
+            }
+            for (int bit = 0; bit < 32; bit++) {
+                if (active & (1U << bit)) {
+                    int irq_idx = i * 32 + bit;
+                    uint32_t dest = (s->priority[irq_idx] >> 16) & 0x3;
+                    if (!dest) {
+                        dest = s->priority[irq_idx] & 0x3;
+                    }
+                    if (!dest) {
+                        dest = s->target[i];
+                    }
+                    if (!dest) {
+                        dest = 0x01;
+                    }
+                    if (dest & cpu_mask) {
+                        val = (1U << 16) | (uint32_t)irq_idx;
+                        break;
+                    }
+                }
+            }
+            if (val != 0) {
+                break;
+            }
+        }
+        break;
+    }
+    case 0x3000 ... 0x32fc: /* S5L8940 AIC_INT_PRIORITY / routing (192 IRQs) */
+        val = s->priority[(offset - 0x3000) / 4];
+        break;
+    case 0x4100 ... 0x4114: /* S5L8940 AIC_INT_ENABLE (6 banks) */
+        val = s->enabled[(offset - 0x4100) / 4];
+        break;
+    case 0x4200 ... 0x4214: /* S5L8940 AIC_INT_PENDING (6 banks) */
+        val = s->pending[(offset - 0x4200) / 4];
         break;
     default:
         val = s->storage[word_idx];
@@ -251,20 +303,29 @@ static void s5l8940_aic_write(void *opaque, hwaddr offset, uint64_t value, unsig
     case 0x84:
         s->target_destinations[2] = (uint32_t)value;
         break;
-    case 0x100 ... 0x10c: /* AIC_INT_ENABLE */
+    case 0x100 ... 0x114: /* Legacy AIC_INT_ENABLE (6 banks) */
         s->enabled[(offset - 0x100) / 4] |= (uint32_t)value;
         break;
-    case 0x110 ... 0x11c: /* AIC_INT_DISABLE */
-        s->enabled[(offset - 0x110) / 4] &= ~(uint32_t)value;
+    case 0x120 ... 0x134: /* Legacy AIC_INT_DISABLE (6 banks) */
+        s->enabled[(offset - 0x120) / 4] &= ~(uint32_t)value;
         break;
-    case 0x120 ... 0x12c: /* AIC_INT_SW_SET */
-        s->pending[(offset - 0x120) / 4] |= (uint32_t)value;
-        break;
-    case 0x130 ... 0x13c: /* AIC_INT_SW_CLR / ACK */
-        s->pending[(offset - 0x130) / 4] &= ~(uint32_t)value;
-        break;
-    case 0x140 ... 0x33c: /* AIC_INT_PRIORITY */
+    case 0x140 ... 0x33c: /* Legacy AIC_INT_PRIORITY */
         s->priority[(offset - 0x140) / 4] = (uint32_t)value;
+        break;
+    case 0x3000 ... 0x32fc: /* S5L8940 AIC_INT_PRIORITY / routing (192 IRQs) */
+        s->priority[(offset - 0x3000) / 4] = (uint32_t)value;
+        break;
+    case 0x4080 ... 0x4094: /* S5L8940 AIC_INT_ACK (clear pending, 6 banks) */
+        s->pending[(offset - 0x4080) / 4] &= ~(uint32_t)value;
+        break;
+    case 0x4100 ... 0x4114: /* S5L8940 AIC_INT_ENABLE (6 banks) */
+        s->enabled[(offset - 0x4100) / 4] |= (uint32_t)value;
+        break;
+    case 0x4180 ... 0x4194: /* S5L8940 AIC_INT_DISABLE (6 banks) */
+        s->enabled[(offset - 0x4180) / 4] &= ~(uint32_t)value;
+        break;
+    case 0x4200 ... 0x4214: /* S5L8940 AIC_INT_SW_SET (6 banks) */
+        s->pending[(offset - 0x4200) / 4] |= (uint32_t)value;
         break;
     case 0x5000 ... 0x50ff:
         /* DIPI registers (including 0x5030: DIPI 3 doorbell to IOP) */
@@ -404,6 +465,8 @@ static void s5l8940_aic_init(Object *obj)
     s->target[1] = 0x01; /* Bank 1 (IRQs 32..63): CPU0 */
     s->target[2] = 0x03; /* Bank 2 (IRQs 64..95): both CPU0 and CPU1 */
     s->target[3] = 0x03; /* Bank 3 (IRQs 96..127): both CPU0 and CPU1 */
+    s->target[4] = 0x03; /* Bank 4 (IRQs 128..159): both CPU0 and CPU1 */
+    s->target[5] = 0x03; /* Bank 5 (IRQs 160..191): both CPU0 and CPU1 */
 
     qdev_init_gpio_in(DEVICE(obj), s5l8940_aic_set_irq, S5L8940_AIC_NUM_IRQS);
 }
