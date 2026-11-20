@@ -267,7 +267,7 @@ def probe(binary, bundle, output, seconds):
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 if sample % 10 == 0 or sample == max(1, int(seconds)) - 1:
                     (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                if sample in (90, 120, 150, 180, 210, 240, 270, 300, 350, 400, 450):
+                if sample in (60, 90, 120, 150, 180, 210, 240, 270, 300, 350, 400, 450):
                     try:
                         qmp('human-monitor-command', {'command-line': 'sendkey menu 150'})
                         qmp('human-monitor-command', {'command-line': 'sendkey h 150'})
@@ -283,15 +283,23 @@ def probe(binary, bundle, output, seconds):
                             h_end = ppm_bytes.find(b'\n', ppm_bytes.find(b'255') + 3) + 1
                             pix = ppm_bytes[h_end:]
                             num_colors = len(set(pix[i:i+3] for i in range(0, len(pix), 12)))
-                            if sample >= 90 and num_colors > 256:
-                                print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors across full display. Exiting probe early.", flush=True)
+                            top_pix = pix[:921600]
+                            bot_pix = pix[921600:]
+                            top_colors = len(set(top_pix[i:i+3] for i in range(0, len(top_pix), 12) if top_pix[i:i+3] != b'\x00\x00\x00'))
+                            bot_colors = len(set(bot_pix[i:i+3] for i in range(0, len(bot_pix), 12) if bot_pix[i:i+3] != b'\x00\x00\x00'))
+                            if num_colors > 256:
+                                ios_boot_confirmed = True
+                            if sample % 10 == 0 or num_colors > 256:
+                                print(f"Sample {sample}: colors={num_colors} (top={top_colors}, bot={bot_colors})", flush=True)
+                            if sample >= 180 and top_colors > 100 and bot_colors > 100 and num_colors > 1000:
+                                print(f"Lock screen UI fully rendered! Detected {num_colors} distinct colors across full display (top={top_colors}, bot={bot_colors}). Exiting probe.", flush=True)
                                 ios_boot_confirmed = True
                                 framebuffer = (output / 'boot-framebuffer.raw').resolve()
                                 qmp('human-monitor-command', {'command-line':
                                              f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
                                 try:
                                     cur_fb = 0
-                                    for reg in ('0x3a100010', '0x3a104044', '0x3a105044', '0x3a105048'):
+                                    for reg in ('0x3a100010', '0x3a104044', '0x3a104048', '0x3a105044', '0x3a105048'):
                                         fb_val = qmp('human-monitor-command', {'command-line': f'xp /1wx {reg}'})
                                         m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
                                         if m_fb:
@@ -329,7 +337,7 @@ def probe(binary, bundle, output, seconds):
                 (output / 'framebuffer-error.txt').write_text(str(result) + '\n')
             try:
                 cur_fb = 0
-                for reg in ('0x3a100010', '0x3a104044', '0x3a105044', '0x3a105048'):
+                for reg in ('0x3a100010', '0x3a104044', '0x3a104048', '0x3a105044', '0x3a105048'):
                     fb_val = qmp('human-monitor-command', {'command-line': f'xp /1wx {reg}'})
                     m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
                     if m_fb:
