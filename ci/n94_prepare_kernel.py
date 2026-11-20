@@ -838,6 +838,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         memory_map.append(("RAMDisk", rd_pa, len(ramdisk)))
     memory_map += [("DeviceTree", dt_pa, len(dt.encode())), ("BootArgs", args_pa, 4096)]
     memory_map.append(("PRAM", pram_pa, pram_size))
+    memory_map.append(("Framebuffer", framebuffer, framebuffer_size))
     node = dt.at("chosen/memory-map")
     slots = [k for k in node.props if k.startswith("MemoryMapReserved-")]
     if len(slots) < len(memory_map):

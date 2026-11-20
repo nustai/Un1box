@@ -259,7 +259,7 @@ def probe(binary, bundle, output, seconds):
                             h_end = ppm_bytes.find(b'\n', ppm_bytes.find(b'255') + 3) + 1
                             pix = ppm_bytes[h_end:]
                             num_colors = len(set(pix[i:i+3] for i in range(0, len(pix), 12)))
-                            if num_colors > 16:
+                            if sample >= 90 and num_colors > 256:
                                 print(f"SpringBoard UI rendered! Detected {num_colors} distinct colors across full display. Exiting probe early.", flush=True)
                                 ios_boot_confirmed = True
                                 framebuffer = (output / 'boot-framebuffer.raw').resolve()
