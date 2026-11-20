@@ -721,6 +721,18 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         mac_enforce_repl = bytes.fromhex('00000000' * 12 + '0300000002000000ffffffff')
         assert len(mac_enforce_repl) == len(mac_enforce_target), f"Byte length mismatch: {len(mac_enforce_repl)} != {len(mac_enforce_target)}"
         kernel = kernel[:p46] + mac_enforce_repl + kernel[p46 + len(mac_enforce_target):]
+    # AppleMobileCLCD::start_hardware: bypass iBoot uninitialized check
+    # Target: 0x80d4cb44 in AppleH4PCLCD
+    clcd_target = bytes.fromhex('40f2ff73026e1a4218bf11ea02010dd02544297831b97248784413f0b3f8d8f8000018b1006d10f0010f34d1')
+    p_clcd = kernel.find(clcd_target)
+    if p_clcd != -1:
+        # Patch:
+        # 1. 0dd0 (beq #0x80d4cb70) -> 00bf (nop)
+        # 2. 18b1 (cbz r0, #0x80d4cb70) -> 00bf (nop)
+        # 3. 34d1 (bne #0x80d4cbda) -> 34e0 (b #0x80d4cbda - unconditional branch to success!)
+        clcd_repl = bytes.fromhex('40f2ff73026e1a4218bf11ea020100bf2544297831b97248784413f0b3f8d8f8000000bf006d10f0010f34e0')
+        assert len(clcd_repl) == len(clcd_target), f"Byte length mismatch: {len(clcd_repl)} != {len(clcd_target)}"
+        kernel = kernel[:p_clcd] + clcd_repl + kernel[p_clcd + len(clcd_target):]
 
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
