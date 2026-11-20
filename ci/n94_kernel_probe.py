@@ -105,14 +105,16 @@ def probe(binary, bundle, output, seconds):
                     qtest_command('writel 0x3a10102c 0xffffffff')
                     qtest_command('writel 0x3a101028 0x1fa42')
                     qtest_command('writel 0x3a101038 0x00000201')
+                    qtest_command('writel 0x3f200104 0x00000800')
                     observed = [qtest_command('readl 0x39200050'), qtest_command('readl 0x39200060'),
-                                qtest_command('readl 0x3a101028'), qtest_command('readl 0x3a101038')]
+                                qtest_command('readl 0x3a101028'), qtest_command('readl 0x3a101038'),
+                                qtest_command('readl 0x3f200104')]
                     values = [int(reply.split()[1], 0) for reply in observed]
-                    if values != [1, 0x03c00280, 0x1fa42, 0x00000201]:
+                    if values != [1, 0x03c00280, 0x1fa42, 0x00000201, 0x800]:
                         raise RuntimeError(f'CLCD diagnostic writes did not read back: {observed}')
                     (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
                         'diagnostic_only': True, 'physical_base': '0x39200000',
-                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280', '0x3a101028': '0x1fa42', '0x3a101038': '0x201'},
+                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280', '0x3a101028': '0x1fa42', '0x3a101038': '0x201', '0x3f200104': '0x800'},
                         'observed': observed}, indent=2))
             if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)
@@ -267,6 +269,12 @@ def probe(binary, bundle, output, seconds):
                             'command-line': 'gva2gpa ' + fault.group(1)})
                 if sample % 10 == 0 or sample == max(1, int(seconds)) - 1:
                     (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
+                if sample in (90, 120, 150, 180, 210, 240, 270, 300, 350, 400, 450):
+                    try:
+                        qmp('human-monitor-command', {'command-line': 'sendkey menu 150'})
+                        qmp('human-monitor-command', {'command-line': 'sendkey h 150'})
+                    except Exception:
+                        pass
                 if sample > 15 or sample % 2 == 0:
                     try:
                         qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
@@ -284,15 +292,16 @@ def probe(binary, bundle, output, seconds):
                                 qmp('human-monitor-command', {'command-line':
                                              f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
                                 try:
-                                    fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
-                                    m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
-                                    cur_fb = int(m_fb.group(1), 16) if m_fb else 0
-                                    if not (0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000):
-                                        fb_val2 = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a105048'})
-                                        m_fb2 = re.search(r'0x([0-9a-fA-F]+)', fb_val2.split(':')[-1] if ':' in fb_val2 else '')
-                                        if m_fb2:
-                                            cur_fb = int(m_fb2.group(1), 16)
-                                    if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                                    cur_fb = 0
+                                    for reg in ('0x3a100010', '0x3a104044', '0x3a105044', '0x3a105048'):
+                                        fb_val = qmp('human-monitor-command', {'command-line': f'xp /1wx {reg}'})
+                                        m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
+                                        if m_fb:
+                                            cand_fb = int(m_fb.group(1), 16)
+                                            if 0x80000000 <= cand_fb < 0xa0000000 and cand_fb != 0x8fd00000:
+                                                cur_fb = cand_fb
+                                                break
+                                    if cur_fb:
                                         qmp('human-monitor-command', {'command-line':
                                                      f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
                                 except Exception:
@@ -321,15 +330,16 @@ def probe(binary, bundle, output, seconds):
             if result or not framebuffer.is_file():
                 (output / 'framebuffer-error.txt').write_text(str(result) + '\n')
             try:
-                fb_val = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a100010'})
-                m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
-                cur_fb = int(m_fb.group(1), 16) if m_fb else 0
-                if not (0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000):
-                    fb_val2 = qmp('human-monitor-command', {'command-line': 'xp /1wx 0x3a105048'})
-                    m_fb2 = re.search(r'0x([0-9a-fA-F]+)', fb_val2.split(':')[-1] if ':' in fb_val2 else '')
-                    if m_fb2:
-                        cur_fb = int(m_fb2.group(1), 16)
-                if 0x80000000 <= cur_fb < 0xa0000000 and cur_fb != 0x8fd00000:
+                cur_fb = 0
+                for reg in ('0x3a100010', '0x3a104044', '0x3a105044', '0x3a105048'):
+                    fb_val = qmp('human-monitor-command', {'command-line': f'xp /1wx {reg}'})
+                    m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
+                    if m_fb:
+                        cand_fb = int(m_fb.group(1), 16)
+                        if 0x80000000 <= cand_fb < 0xa0000000 and cand_fb != 0x8fd00000:
+                            cur_fb = cand_fb
+                            break
+                if cur_fb:
                     qmp('human-monitor-command', {'command-line':
                                  f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
             except Exception:

@@ -825,6 +825,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         disk.set("BSD Name", b"disk0\0")
     except (KeyError, ValueError, StopIteration):
         pass
+    try:
+        lcd = dt.at("arm-io/mipi-dsim/lcd")
+        lcd.set("lcd-panel-id", u32(0x0969e5a1))
+        lcd.set("raw-panel-id", b"\xa1\xe5\x69\x09" + b"\x00" * 12)
+    except (KeyError, ValueError, StopIteration):
+        pass
+    try:
+        bl = dt.at("backlight")
+        bl.set("backlight-control", u32(1))
+    except (KeyError, ValueError, StopIteration):
+        pass
+    try:
+        chosen = dt.at("chosen")
+        chosen.set("darkboot", u32(0))
+    except (KeyError, ValueError, StopIteration):
+        pass
     rd_pa = align(max(address + memory for _, address, memory, _, _ in segments))
     if ramdisk is not None:
         if len(ramdisk) > 64 << 20 or ramdisk[1024:1026] not in (b"H+", b"HX"):
@@ -849,7 +865,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     cooked_dt = dt.encode()
     if len(cooked_dt) > args_pa - dt_pa:
         raise ValueError("DT grew beyond its reserved page range")
-    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 -no-zp"
+    command = b"-v serial=3 debug=0x14e keepsyms=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 -no-zp darkboot=0"
     if diagnostic_single_cpu:
         command += b" cpus=1"
     if ramdisk is not None:
