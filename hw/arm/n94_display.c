@@ -58,6 +58,11 @@ struct N94DisplayState {
     uint8_t seen_main[N94_CLCD_WORDS];
     uint8_t seen_sub1[N94_CLCD_SUB1_WORDS];
     uint8_t seen_sub2[N94_CLCD_SUB2_WORDS];
+
+    uint32_t pkt_left;
+    uint32_t pkt_off;
+    uint32_t swap_id;
+    bool swap_pending;
 };
 
 /* Log up to four reads and writes per register without flooding the trace. */
@@ -86,6 +91,12 @@ static void n94_display_update(void *opaque)
         fb = s->storage[0x4048 / 4];
     }
     if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
+        fb = s->storage[0x5044 / 4];
+    }
+    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
+        fb = s->storage[0x4044 / 4];
+    }
+    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
         fb = s->boot_fb_base;
     }
     if (!fb) {
@@ -103,15 +114,56 @@ static void n94_display_update(void *opaque)
     }
 }
 
+static void n94_pipe_fifo_write_word(N94DisplayState *s, uint32_t val)
+{
+    if (s->pkt_left == 0) {
+        s->pkt_left = val >> 16;
+        s->pkt_off = val & 0xffff;
+    } else {
+        if (s->pkt_off < 0x7000) {
+            s->storage[s->pkt_off / 4] = val;
+            if (s->pkt_off == 0x4044 || s->pkt_off == 0x5044) {
+                if (val >= 0x80000000 && val < 0xa0000000) {
+                    s->fb_base = val;
+                    s->guest_configured = true;
+                }
+            }
+        }
+        s->pkt_off += 4;
+        s->pkt_left--;
+    }
+}
+
+static void n94_pipe_fifo_write(N94DisplayState *s, uint32_t val)
+{
+    if ((val & 0x80000000) && s->pkt_left == 0) {
+        s->swap_id = val & 0xffff;
+        s->swap_pending = true;
+        return;
+    }
+    n94_pipe_fifo_write_word(s, val);
+}
+
 static void n94_vblank_tick(void *opaque)
 {
     N94DisplayState *s = opaque;
 
-    /* S5L8940 CLCD DPCIRQ: Bit 1 (0x02) indicates VBLANK completion */
-    s->storage[0x102c / 4] |= 0x02;
+    /* S5L8940 CLCD / AppleDisplayPipe:
+     * DPCIRQ (+0x102c):
+     * Bit 0: VBL / frame done (DP_IRQ_VBL, 0x001)
+     * Bit 1: VBLANK completion (0x002)
+     * Bit 8: Swap completed (DP_IRQ_SWAP_DONE, 0x100)
+     */
+    if (s->swap_pending) {
+        s->storage[0x1048 / 4] = (s->storage[0x1048 / 4] & ~0xffff) | s->swap_id;
+        s->storage[0x102c / 4] |= 0x103; /* VBL (0x1) + VBLANK (0x2) + SWAP_DONE (0x100) */
+        s->swap_pending = false;
+    } else {
+        s->storage[0x102c / 4] |= 0x03; /* VBL (0x1) + VBLANK (0x2) */
+    }
 
-    /* If unmasked by interrupt mask register (+0x1028), raise level IRQ 0x2b (Line 0) */
-    if (s->storage[0x1028 / 4] & 0x02) {
+    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled */
+    if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
         qemu_irq_raise(s->vblank_irq[0]);
     }
 
@@ -152,6 +204,15 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
     case 0x20: /* Pixel format: 32-bit ARGB */
         val = 0x01;
         break;
+    case 0x101c: /* DP_FLAGS: return 0 (idle) */
+        val = 0;
+        break;
+    case 0x1044: /* DP_FIFO_COUNT: polled to 0 */
+        val = 0;
+        break;
+    case 0x1048: /* DP_SWAP_DONE: low 16 bits completed swap ID */
+        val = s->storage[0x1048 / 4];
+        break;
     case 0x1038: /* DPCENAB */
         val = s->storage[word_idx] ? s->storage[word_idx] : 0x00000201;
         break;
@@ -190,6 +251,10 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     /* The stock driver reads DPCIRQ at +0x102c, accumulates its bits,
      * then writes those bits back to clear them (W1C).
      * Level IRQ line 0 (0x2b) deasserts when all unmasked bits are cleared. */
+    if (offset == 0x103c) {
+        n94_pipe_fifo_write(s, (uint32_t)value);
+        return;
+    }
     if (offset == 0x102c) {
         s->storage[word_idx] &= ~(uint32_t)value;
         if (!(s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
@@ -388,6 +453,10 @@ static void n94_display_reset(DeviceState *dev)
     s->status = 0;
     s->enabled = false;
     s->guest_configured = false;
+    s->pkt_left = 0;
+    s->pkt_off = 0;
+    s->swap_id = 0;
+    s->swap_pending = false;
     memset(s->storage, 0, sizeof(s->storage));
     memset(s->storage_sub1, 0, sizeof(s->storage_sub1));
     memset(s->storage_sub2, 0, sizeof(s->storage_sub2));
