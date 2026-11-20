@@ -245,6 +245,8 @@ class HFS:
         "/System/Library/LaunchDaemons/com.apple.assertiond.plist",
         "/System/Library/LaunchDaemons/com.apple.powerd.plist",
         "/System/Library/LaunchDaemons/com.apple.UserEventAgent-System.plist",
+        "/System/Library/LaunchDaemons/com.apple.cfprefsd.daemon.plist",
+        "/System/Library/LaunchAgents/com.apple.cfprefsd.agent.plist",
     )):
         targets = {tuple(p.strip("/").split("/")): p for p in paths}
         wanted = {parts[-1] for parts in targets}
@@ -280,12 +282,15 @@ class HFS:
             "com.apple.assertiond.plist",
             "com.apple.powerd.plist",
             "com.apple.UserEventAgent-System.plist",
+            "com.apple.cfprefsd.daemon.plist",
+            "com.apple.cfprefsd.agent.plist",
+            "com.apple.cfprefsd.plist",
         }
         for node_id, at, key_len, parent, name, rec in candidates:
             p = folder_path(parent) + (name,)
-            if "SpringBoard" in name or "springboard" in name or "backboard" in name:
+            if "SpringBoard" in name or "springboard" in name or "backboard" in name or "cfprefs" in name:
                 print(f"Catalog entry: p={p}, name={name}", flush=True)
-            if p in targets or name in wanted_plists:
+            if p in targets or name in wanted_plists or ("cfprefsd" in name and name.endswith(".plist")):
                 cat_logical = node_id * self.node_size
                 cursor = 0
                 for ext_idx in range(8):
@@ -488,7 +493,7 @@ class HFS:
                 else:
                     uncompressed = None
 
-                if name.endswith(".plist") and (name in wanted_plists or "LaunchDaemons" in p):
+                if name.endswith(".plist") and (name in wanted_plists or "cfprefsd" in name or "LaunchDaemons" in p):
                     try:
                         raw_plist = uncompressed
                         if raw_plist is None:
