@@ -291,7 +291,7 @@ def probe(binary, bundle, output, seconds):
                                 ios_boot_confirmed = True
                             if sample % 10 == 0 or num_colors > 256:
                                 print(f"Sample {sample}: colors={num_colors} (top={top_colors}, bot={bot_colors})", flush=True)
-                            if sample >= 40 and top_colors > 100 and bot_colors > 100 and num_colors > 1000:
+                            if sample >= 30 and top_colors > 30 and bot_colors > 30 and num_colors > 200:
                                 print(f"Lock screen UI fully rendered! Detected {num_colors} distinct colors across full display (top={top_colors}, bot={bot_colors}). Exiting probe.", flush=True)
                                 ios_boot_confirmed = True
                                 framebuffer = (output / 'boot-framebuffer.raw').resolve()
