@@ -234,6 +234,8 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         b'com.apple.iokit.IOStreamAudioFamily',
         b'com.apple.iokit.IOAudio2Family',
         b'com.apple.iokit.IOCECFamily',
+        b'com.apple.iokit.IOAVFamily',
+        b'com.apple.iokit.IODisplayPortFamily',
         b'com.apple.iokit.IOSurface',
         b'com.apple.driver.AppleM2ScalerCSCDriver',
         b'com.apple.iokit.IOMobileGraphicsFamily',
@@ -245,7 +247,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     )
     dtsdk = b'<key>DTSDKName</key><string>iphoneos9.3.internal</string>'
     replacement_local = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
-    replacement_root  = b'<key>OSBundleRequired</key><string>Root</string>         '
+    replacement_root  = b'<key>OSBundleRequired</key><string>Local-Root</string>   '
     for kext_id, repl in [(k, replacement_local) for k in storage_kexts] + [(k, replacement_root) for k in display_touch_kexts]:
         target = b'<key>CFBundleIdentifier</key><string>' + kext_id + b'</string>'
         pos = kernel.find(target)
