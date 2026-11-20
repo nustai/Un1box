@@ -577,6 +577,12 @@ class HFS:
                     raw.seek(start_block * self.block + 0x30e1e)
                     raw.write(bytes.fromhex("002000bf"))
                     print("Patched backboardd on disk (bypass CFPreferencesAppSynchronize + force unblank screen)", flush=True)
+                elif name == "keybagd":
+                    raw.seek(start_block * self.block + 0x166cc)
+                    assert raw.read(8) == bytes.fromhex("f0b503af2de90005"), "keybagd 0x166cc mismatch"
+                    raw.seek(start_block * self.block + 0x166cc)
+                    raw.write(bytes.fromhex("0020704700bf00bf"))
+                    print("Patched keybagd on disk at 0x166cc to exit 0", flush=True)
 
             # Assign exit-0 stub to tasks that have no data fork (e.g. cc_fips_test, FinishRestoreFromBackup)
             if exit0_fork:
