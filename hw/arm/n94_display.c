@@ -241,7 +241,6 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
     N94DisplayState *s = N94_DISPLAY(dev);
     s->boot_fb_base = address;
     s->fb_base = address;
-    s->enabled = true;
     s->guest_configured = false;
 
     /* S5L8940 CLCD / AppleDisplayPipe default bootloader (iBoot) hardware state:
@@ -264,17 +263,6 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
     s->storage[0x504c / 4] = N94_DISPLAY_STRIDE;
     s->storage[0x5060 / 4] = 0x00000000;
     s->storage[0x5070 / 4] = (640 << 16) | 960;
-
-    /* S5L8940 CLCD / AppleDisplayPipe Subregion 1 (0x39200000, DPC timing):
-     * Offset 0x50: Display Pipe / Timing Generator Enable (bit 0 = 1).
-     * Offset 0x60: Display Resolution (Width 640 in low 11 bits, Height 960 in high 11 bits).
-     * Offset 0x14: Timing control flags (0x0).
-     * Offset 0x18: Timing mode (0x0).
-     * Offset 0x2c: Timing control status (0x1).
-     */
-    s->storage_sub1[0x50 / 4] = 0x00000001;
-    s->storage_sub1[0x60 / 4] = (960 << 16) | 640;
-    s->storage_sub1[0x2c / 4] = 0x00000001;
 }
 
 /* MMIO Region 1: 0x09200000:0x2000 (Overlay 0 / Subregion 1) */
@@ -282,21 +270,7 @@ static uint64_t n94_display_sub1_read(void *opaque, hwaddr offset, unsigned size
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
-    uint32_t value;
-    switch (offset) {
-    case 0x50:
-        value = s->storage_sub1[word_idx] ? s->storage_sub1[word_idx] : 0x00000001;
-        break;
-    case 0x60:
-        value = s->storage_sub1[word_idx] ? s->storage_sub1[word_idx] : ((960 << 16) | 640);
-        break;
-    case 0x2c:
-        value = s->storage_sub1[word_idx] ? s->storage_sub1[word_idx] : 0x00000001;
-        break;
-    default:
-        value = s->storage_sub1[word_idx];
-        break;
-    }
+    uint32_t value = s->storage_sub1[word_idx];
     n94_display_trace(s->seen_sub1, offset, false, value, "sub1");
     return value;
 }
