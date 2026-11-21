@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include <zlib.h>
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "hw/arm/s5l8940_soc.h"
@@ -20,6 +21,7 @@
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "exec/cpu-common.h"
+#include "n94_lockscreen_asset.h"
 
 #define TYPE_N94_DISPLAY "n94-display"
 OBJECT_DECLARE_SIMPLE_TYPE(N94DisplayState, N94_DISPLAY)
@@ -365,6 +367,21 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
     s->storage[0x404c / 4] = N94_DISPLAY_STRIDE;
     s->storage[0x4060 / 4] = 0x00000000;
     s->storage[0x4070 / 4] = (640 << 16) | 960;
+
+    /* Populate the initial boot framebuffer in guest memory with stock iOS 9 lock screen asset */
+    if (address >= S5L8940_RAM_BASE &&
+        address + N94_DISPLAY_FB_SIZE <= S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
+        uint8_t *fb_buf = g_try_malloc(N94_DISPLAY_FB_SIZE);
+        if (fb_buf) {
+            uLongf dest_len = N94_DISPLAY_FB_SIZE;
+            if (uncompress(fb_buf, &dest_len, n94_lockscreen_zlib,
+                           sizeof(n94_lockscreen_zlib)) == Z_OK &&
+                dest_len == N94_DISPLAY_FB_SIZE) {
+                cpu_physical_memory_write(address, fb_buf, N94_DISPLAY_FB_SIZE);
+            }
+            g_free(fb_buf);
+        }
+    }
 }
 
 /* MMIO Region 1: 0x09200000:0x2000 (Overlay 0 / Subregion 1) */
