@@ -733,6 +733,22 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         clcd_repl = bytes.fromhex('40f2ff73026e1a4218bf11ea020100bf2544297831b97248784413f0b3f8d8f8000000bf006d10f0010f34e0')
         assert len(clcd_repl) == len(clcd_target), f"Byte length mismatch: {len(clcd_repl)} != {len(clcd_target)}"
         kernel = kernel[:p_clcd] + clcd_repl + kernel[p_clcd + len(clcd_target):]
+    # bsd_init: mount root filesystem as read-write (clear MNT_RDONLY)
+    # Target at 0x80281c1c: movw r1, #0x4001 -> movw r1, #0x4000
+    target_rw = bytes.fromhex('44f2010140f8244f4bf2fe52')
+    p_rw = kernel.find(target_rw)
+    if p_rw != -1:
+        repl_rw = bytes.fromhex('44f2000140f8244f4bf2fe52')
+        assert len(repl_rw) == len(target_rw), f"Byte length mismatch: {len(repl_rw)} != {len(target_rw)}"
+        kernel = kernel[:p_rw] + repl_rw + kernel[p_rw + len(target_rw):]
+    # com.apple.security.sandbox: bypass Seatbelt policy registration
+    # Target at 0x80f131e0: movs r0, #0; bx lr (KERN_SUCCESS without registering MAC hooks)
+    target_sb = bytes.fromhex('80b56f460bf0cafe002818bf')
+    p_sb = kernel.find(target_sb)
+    if p_sb != -1:
+        repl_sb = bytes.fromhex('0020704700bf00bf00bf')
+        assert len(repl_sb) == len(target_sb), f"Byte length mismatch: {len(repl_sb)} != {len(target_sb)}"
+        kernel = kernel[:p_sb] + repl_sb + kernel[p_sb + len(target_sb):]
 
     segments, entry = macho(kernel)
     dt, end = Node.read(raw_dt)
