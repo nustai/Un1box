@@ -858,6 +858,10 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
         clcd.set("name", b"clcd,s5l8940x\0")
         clcd.set("IOName", b"clcd,s5l8940x\0")
         clcd.set("compatible", b"clcd,s5l8940x\0")
+        reg_val = clcd.props.get("reg")
+        if reg_val and len(reg_val[0]) < 8 * 8:
+            dummy_regs = b"".join(u32(0x09400000 + i * 0x100000, 0x1000) for i in range(8 - len(reg_val[0]) // 8))
+            clcd.set("reg", reg_val[0] + dummy_regs)
     except (KeyError, ValueError, StopIteration):
         pass
     try:
