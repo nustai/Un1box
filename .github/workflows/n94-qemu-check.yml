@@ -125,14 +125,14 @@ jobs:
       - name: Prepare diagnostic boot images from verified Apple firmware
         if: github.event_name == 'workflow_dispatch' && inputs.kernel_probe
         run: |
-          python3 -m pip install cryptography
+          python3 -m pip install cryptography pillow
           curl --fail --location --retry 3 --max-time 600 \
             'https://updates.cdn-apple.com/2019/ios/041-80043-20190722-6C65AD27-69D8-499C-BC15-DE7AC74DE2BD/iPhone4,1_9.3.6_13G37_Restore.ipsw' -o n94-input.ipsw
           python3 ci/n94_prepare_kernel.py --ipsw n94-input.ipsw --output n94-images
 
       - name: Trace actual iOS kernel with both boot-args version candidates
         if: github.event_name == 'workflow_dispatch' && inputs.kernel_probe
-        timeout-minutes: 3
+        timeout-minutes: 10
         run: python3 ci/n94_kernel_probe.py qemu_src/build/qemu-system-arm n94-images n94-traces
 
       - name: Keep diagnostic traces without redistributing firmware
