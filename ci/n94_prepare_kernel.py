@@ -746,7 +746,7 @@ def prepare(kernel, raw_dt, version, output, ramdisk=None, entropy=None,
     target_sb = bytes.fromhex('80b56f460bf0cafe002818bf')
     p_sb = kernel.find(target_sb)
     if p_sb != -1:
-        repl_sb = bytes.fromhex('0020704700bf00bf00bf')
+        repl_sb = bytes.fromhex('0020704700bf00bf00bf00bf')
         assert len(repl_sb) == len(target_sb), f"Byte length mismatch: {len(repl_sb)} != {len(target_sb)}"
         kernel = kernel[:p_sb] + repl_sb + kernel[p_sb + len(target_sb):]
 
