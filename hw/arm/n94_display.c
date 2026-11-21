@@ -332,21 +332,8 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
 
     /* S5L8940 CLCD / AppleDisplayPipe default bootloader (iBoot) hardware state:
      * DPCIRQ (+0x102c): initial status 0.
-     * DPCMASK (+0x1028): VBL (bit 0), VBLANK (bit 1), Swap Done (bit 8).
      * DPCENAB (+0x1038): LCD enabled (bit 0) and DPU0 enabled (bit 9, 0x200).
-     * DPU0SRCFMT (+0x5040): 32-bit ARGB8888 (bits 8..10 = 0).
-     * DPU0SRCSIZE (+0x5044): 640 x 960 Retina.
-     * DPU0SRCBASE (+0x5048): Boot framebuffer PA (0x8fd00000).
-     * DPU0SRCPITCH (+0x504c): 2560 bytes stride (640 * 4).
-     * DPU1SRCFMT (+0x4040): 32-bit ARGB8888.
-     * DPU1SRCSIZE (+0x4044): 640 x 960 Retina.
-     * DPU1SRCBASE (+0x4048): Boot framebuffer PA (0x8fd00000).
-     * DPU1SRCPITCH (+0x404c): 2560 bytes stride (640 * 4).
-     * Crop start (+0x5060, +0x4060): (0, 0).
-     * Crop end (+0x5070, +0x4070): (640 << 16) | 960 (Width 640, Height 960).
-     * Timing registers (+0x205c, +0x2060, +0x2064): active LCD panel timing.
      */
-    s->storage[0x1028 / 4] = 0x0001fa43;
     s->storage[0x1038 / 4] = 0x00000201;
     s->storage[0x205c / 4] = 0x00000001;
     s->storage[0x2060 / 4] = 0x00000001;
