@@ -15,6 +15,7 @@
 #include "system/address-spaces.h"
 #include "system/system.h"
 #include "hw/arm/boot.h"
+#include "hw/arm/ipod_touch_mipi_dsi.h"
 #include "hw/arm/s5l8940_soc.h"
 #include "hw/arm/s5l8940_iop.h"
 #include "hw/arm/s5l8940_spi.h"
@@ -186,10 +187,13 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(scaler1), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(scaler1), 0, 0x38400000);
 
-    DeviceState *mipi = qdev_new("n94-mipi");
+    DeviceState *mipi = qdev_new(TYPE_IPOD_TOUCH_MIPI_DSI);
+    IPOD_TOUCH_MIPI_DSI(mipi)->hs_clock_at_reset = true;
+    qdev_prop_set_uint32(mipi, "lanes", 4);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, 0x39500000);
-    sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 1, 0x3f110000);
+    sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, S5L8940_MIPI_DSIM_BASE);
+    sysbus_connect_irq(SYS_BUS_DEVICE(mipi), 0, qdev_get_gpio_in(s->aic, 0x29));
+    sysbus_create_simple("n94-mipi-sac", 0x3f110000, NULL);
 
     /* Both n94 DT DART resources; mapping behavior is not implemented. */
     DeviceState *dart_rt = qdev_new("n94-dart-diagnostic");
@@ -234,10 +238,7 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_mmio_map(SYS_BUS_DEVICE(s->clcd), 1, S5L8940_CLCD_SUB_BASE_1);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->clcd), 2, S5L8940_CLCD_SUB_BASE_2);
 
-    /* DeviceTree specifies interrupts 0x2b, 0x2a for CLCD in that order:
-     * Line 0 -> IRQ 0x2b (VBLANK)
-     * Line 1 -> IRQ 0x2a (FIFO/DMA)
-     */
+    /* The DeviceTree lists the DisplayPipe interrupt before the CLCD. */
     sysbus_connect_irq(SYS_BUS_DEVICE(s->clcd), 0, qdev_get_gpio_in(s->aic, 0x2b));
     sysbus_connect_irq(SYS_BUS_DEVICE(s->clcd), 1, qdev_get_gpio_in(s->aic, 0x2a));
 

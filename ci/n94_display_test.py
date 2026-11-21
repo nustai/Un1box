@@ -60,6 +60,13 @@ def run(binary, directory):
                     return data[header.end():]
 
                 qmp('qmp_capabilities')
+                assert not any(screenshot()), 'boot display contains pixels before any guest writes'
+                assert int(qtest('readl 0x39500000').split()[1], 0) & 0x400
+                assert int(qtest('readl 0x3f110000').split()[1], 0) & 0x100
+                assert int(qtest('readl 0x39200050').split()[1], 0) == 1
+                assert int(qtest('readl 0x39200060').split()[1], 0) == 0x027f03bf
+                qtest('writel 0x39200050 0x0')
+                assert int(qtest('readl 0x39200050').split()[1], 0) == 2
                 # Driver initializes DPCIRQ by writing all ones. A write to
                 # a clear-only status register must not invent pending IRQs.
                 qtest('writel 0x3a10102c 0xffffffff')
@@ -74,16 +81,27 @@ def run(binary, directory):
                 assert screen[959 * 640 * 3:959 * 640 * 3 + 3] == bytes.fromhex('0000ff')
                 print('PASS boot framebuffer displays actual guest RAM including bottom row', flush=True)
 
+                pixel(0x8fb00000, bytes.fromhex('00ffff00'))
+                pixel(0x8fb00000 + 0xb00, bytes.fromhex('ff00ff00'))
+                qtest('writel 0x3a104044 0x8fb00000')
+                qtest('writel 0x3a104048 0x0b02')
+                screen = screenshot()
+                assert screen[:3] == bytes.fromhex('ffff00')
+                assert screen[640 * 3:640 * 3 + 3] == bytes.fromhex('ff00ff')
+                assert int(qtest('readl 0x3a101028').split()[1], 0) == 0x1fa42
+                print('PASS DisplayPipe uses the programmed source and pitch', flush=True)
+
                 pixel(0x8fc00000, bytes.fromhex('ff000000'))
                 qtest('writel 0x3a100010 0x8fc00000')
                 qtest('writel 0x3a100000 0x1')
                 assert screenshot()[:3] == bytes.fromhex('0000ff')
                 print('PASS configured framebuffer takes over the boot display', flush=True)
-                qtest('writel 0x39200050 0x1')
+                qtest('writel 0x39200060 0x1')
                 qtest('writel 0x39300004 0x12345678')
                 qmp('system_reset')
                 assert int(qtest('readl 0x3a101028').split()[1], 0) == 0
-                assert int(qtest('readl 0x39200050').split()[1], 0) == 0
+                assert int(qtest('readl 0x39200050').split()[1], 0) == 1
+                assert int(qtest('readl 0x39200060').split()[1], 0) == 0x027f03bf
                 assert int(qtest('readl 0x39300004').split()[1], 0) == 0
                 # The board's validated boot-framebuffer handoff survives reset.
                 pixel(0x8fd00000, bytes.fromhex('0000ff00'))

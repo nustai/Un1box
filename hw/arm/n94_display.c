@@ -6,13 +6,12 @@
  * Strictly 640x960 Retina (326 ppi). Absolute prohibition on 1024x768 (iPad).
  * MMIO derived from DeviceTree.n94ap.RELEASE ("clcd,s5l8940x"):
  * Base 0: 0x0A100000 (size 0x7000) - Main CLCD control and timing
- * Base 1: 0x09200000 (size 0x2000) - Overlay / Window 0
- * Base 2: 0x09300000 (size 0x1000) - Overlay / Window 1
- * Interrupts: 0x2b (Line 0, VBLANK), 0x2a (Line 1, FIFO/DMA)
+ * Base 1: 0x09200000 (size 0x2000) - CLCD timing generator
+ * Base 2: 0x09300000 (size 0x1000) - CLCD auxiliary registers
+ * Interrupts: 0x2b (DisplayPipe), 0x2a (CLCD)
  */
 
 #include "qemu/osdep.h"
-#include <zlib.h>
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "hw/arm/s5l8940_soc.h"
@@ -21,7 +20,6 @@
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "exec/cpu-common.h"
-#include "n94_lockscreen_asset.h"
 
 #define TYPE_N94_DISPLAY "n94-display"
 OBJECT_DECLARE_SIMPLE_TYPE(N94DisplayState, N94_DISPLAY)
@@ -29,13 +27,23 @@ OBJECT_DECLARE_SIMPLE_TYPE(N94DisplayState, N94_DISPLAY)
 /* iPhone 4S Physical Panel Specifications */
 #define N94_DISPLAY_WIDTH       640
 #define N94_DISPLAY_HEIGHT      960
-#define N94_DISPLAY_BPP         32
 #define N94_DISPLAY_STRIDE      (N94_DISPLAY_WIDTH * 4)
-#define N94_DISPLAY_FB_SIZE     (N94_DISPLAY_STRIDE * N94_DISPLAY_HEIGHT) /* 2,457,600 bytes */
 
 #define N94_CLCD_WORDS          (0x7000 / 4)
 #define N94_CLCD_SUB1_WORDS     (0x2000 / 4)
 #define N94_CLCD_SUB2_WORDS     (0x1000 / 4)
+#define CLCD_IRQ_ENABLE         0x08
+#define CLCD_ENVID              0x50
+#define CLCD_SIZE               0x60
+#define CLCD_IRQ_MASK           0x64
+#define CLCD_IRQ_STATUS         0x68
+#define CLCD_IRQ_FRAME          0x04
+#define PIPE_LAYER_ENABLE       0x1038
+#define PIPE_LAYER_BASE(layer)  (0x4000 + (layer) * 0x1000)
+#define PIPE_LAYER_FORMAT       0x40
+#define PIPE_LAYER_ADDRESS      0x44
+#define PIPE_LAYER_PITCH        0x48
+#define PIPE_LAYER_SIZE         0x60
 
 struct N94DisplayState {
     SysBusDevice parent_obj;
@@ -52,7 +60,6 @@ struct N94DisplayState {
     uint32_t ctrl;
     uint32_t status;
     bool enabled;
-    bool guest_configured;
 
     uint32_t storage[N94_CLCD_WORDS];
     uint32_t storage_sub1[N94_CLCD_SUB1_WORDS];
@@ -84,24 +91,33 @@ static void n94_display_update(void *opaque)
 {
     N94DisplayState *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
-
     uint32_t fb = s->fb_base;
-    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
-        fb = s->storage[0x5048 / 4];
-    }
-    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
-        fb = s->storage[0x4048 / 4];
-    }
-    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
-        fb = s->storage[0x5044 / 4];
-    }
-    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
-        fb = s->storage[0x4044 / 4];
-    }
-    if (!fb || fb < 0x80000000 || fb >= 0xa0000000) {
-        fb = s->boot_fb_base;
-    }
+    uint32_t pitch = N94_DISPLAY_STRIDE;
+
     if (!fb) {
+        /* N94 uses the A4 DisplayPipe layout. Prefer the upper UI layer
+         * when it can supply a full linear ARGB frame. */
+        for (int layer = 1; layer >= 0; layer--) {
+            uint32_t *regs = &s->storage[PIPE_LAYER_BASE(layer) / 4];
+            uint32_t address = regs[PIPE_LAYER_ADDRESS / 4] & ~0x3fu;
+            uint32_t stride = regs[PIPE_LAYER_PITCH / 4] & ~0x3fu;
+            uint64_t end = (uint64_t)address +
+                           (N94_DISPLAY_HEIGHT - 1) * (uint64_t)stride +
+                           N94_DISPLAY_STRIDE;
+
+            if ((s->storage[PIPE_LAYER_ENABLE / 4] & (1u << (8 + layer))) &&
+                (regs[PIPE_LAYER_FORMAT / 4] & 0x701) == 1 &&
+                stride >= N94_DISPLAY_STRIDE && address >= S5L8940_RAM_BASE &&
+                end <= (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
+                fb = address;
+                pitch = stride;
+                break;
+            }
+        }
+    }
+    if (fb < S5L8940_RAM_BASE ||
+        (uint64_t)fb + (N94_DISPLAY_HEIGHT - 1) * (uint64_t)pitch +
+        N94_DISPLAY_STRIDE > (uint64_t)S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
         return;
     }
 
@@ -109,7 +125,7 @@ static void n94_display_update(void *opaque)
     if (dest) {
         /* Read directly from guest physical memory into console surface buffer */
         for (unsigned y = 0; y < N94_DISPLAY_HEIGHT; y++) {
-            cpu_physical_memory_read(fb + y * N94_DISPLAY_STRIDE,
+            cpu_physical_memory_read(fb + y * pitch,
                                      dest + y * surface_stride(surface), N94_DISPLAY_STRIDE);
         }
         dpy_gfx_update_full(s->con);
@@ -124,16 +140,6 @@ static void n94_pipe_fifo_write_word(N94DisplayState *s, uint32_t val)
     } else {
         if (s->pkt_off < 0x7000) {
             s->storage[s->pkt_off / 4] = val;
-            if (s->pkt_off >= 0x4000 && s->pkt_off < 0x6000) {
-                uint32_t base = val & ~0x3f;
-                if (base >= 0x80000000 && base < 0xa0000000) {
-                    s->fb_base = base;
-                    s->guest_configured = true;
-                    if (s->storage[0x1028 / 4] == 0) {
-                        s->storage[0x1028 / 4] = 0x0001fa43;
-                    }
-                }
-            }
         }
         s->pkt_off += 4;
         s->pkt_left--;
@@ -148,6 +154,15 @@ static void n94_pipe_fifo_write(N94DisplayState *s, uint32_t val)
         return;
     }
     n94_pipe_fifo_write_word(s, val);
+}
+
+static void n94_clcd_update_irq(N94DisplayState *s)
+{
+    const uint32_t *regs = s->storage_sub1;
+
+    qemu_set_irq(s->vblank_irq[1],
+                 (regs[CLCD_IRQ_ENABLE / 4] & 1) &&
+                 (regs[CLCD_IRQ_STATUS / 4] & regs[CLCD_IRQ_MASK / 4]));
 }
 
 static void n94_vblank_tick(void *opaque)
@@ -168,10 +183,14 @@ static void n94_vblank_tick(void *opaque)
         s->storage[0x102c / 4] |= 0x03; /* VBL (0x1) + VBLANK (0x2) */
     }
 
-    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled,
-     * but only after guest driver has initialized and configured the hardware. */
-    if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
+    /* Level IRQ line 0 (0x2b) asserts for unmasked DisplayPipe events. */
+    if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
         qemu_irq_raise(s->vblank_irq[0]);
+    }
+
+    if (s->storage_sub1[CLCD_ENVID / 4] & 1) {
+        s->storage_sub1[CLCD_IRQ_STATUS / 4] |= CLCD_IRQ_FRAME;
+        n94_clcd_update_irq(s);
     }
 
     /* Re-arm for 60 Hz (~16.6 ms) */
@@ -220,53 +239,6 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
     case 0x1048: /* DP_SWAP_DONE: low 16 bits completed swap ID */
         val = s->storage[0x1048 / 4];
         break;
-    case 0x1038: /* DPCENAB */
-        val = s->storage[word_idx] ? s->storage[word_idx] : 0x00000201;
-        break;
-    case 0x4040: /* DPU1SRCFMT */
-        val = s->storage[word_idx];
-        break;
-    case 0x4044: /* DPU1SRCSIZE */
-        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
-        break;
-    case 0x4048: /* DPU1SRCBASE */
-        val = s->storage[word_idx] ? s->storage[word_idx] : s->boot_fb_base;
-        s->guest_configured = true;
-        if (s->storage[0x1028 / 4] == 0) {
-            s->storage[0x1028 / 4] = 0x0001fa43;
-        }
-        break;
-    case 0x404c: /* DPU1SRCPITCH */
-        val = s->storage[word_idx] ? s->storage[word_idx] : N94_DISPLAY_STRIDE;
-        break;
-    case 0x4060: /* DPU1 Crop start */
-        val = s->storage[word_idx];
-        break;
-    case 0x4070: /* DPU1 Crop end */
-        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
-        break;
-    case 0x5048: /* DPU0SRCBASE */
-        val = s->storage[word_idx] ? s->storage[word_idx] : s->boot_fb_base;
-        s->guest_configured = true;
-        if (s->storage[0x1028 / 4] == 0) {
-            s->storage[0x1028 / 4] = 0x0001fa43;
-        }
-        break;
-    case 0x5040: /* DPU0SRCFMT */
-        val = s->storage[word_idx];
-        break;
-    case 0x5044: /* DPU0SRCSIZE */
-        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
-        break;
-    case 0x504c: /* DPU0SRCPITCH */
-        val = s->storage[word_idx] ? s->storage[word_idx] : N94_DISPLAY_STRIDE;
-        break;
-    case 0x5060: /* Crop start */
-        val = s->storage[word_idx];
-        break;
-    case 0x5070: /* Crop end */
-        val = s->storage[word_idx] ? s->storage[word_idx] : ((640 << 16) | 960);
-        break;
     default:
         val = s->storage[word_idx];
         break;
@@ -297,10 +269,7 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     }
     if (offset == 0x1028) {
         s->storage[word_idx] = (uint32_t)value;
-        if (value != 0) {
-            s->guest_configured = true;
-        }
-        if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
+        if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
             qemu_irq_raise(s->vblank_irq[0]);
         } else {
             qemu_irq_lower(s->vblank_irq[0]);
@@ -311,31 +280,13 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
 
     switch (offset) {
     case 0x00:
-        s->guest_configured = true;
         s->ctrl = (uint32_t)value;
         s->enabled = (s->ctrl & 0x01) != 0;
         break;
     case 0x10:
         s->fb_base = (uint32_t)value;
         break;
-    case 0x5048: /* DPU0SRCBASE */
-    case 0x4048: /* DPU1SRCBASE */
-        {
-            uint32_t base = (uint32_t)(value & ~0x3f);
-            if (base >= 0x80000000 && base < 0xa0000000) {
-                s->fb_base = base;
-                s->guest_configured = true;
-                if (s->storage[0x1028 / 4] == 0) {
-                    s->storage[0x1028 / 4] = 0x0001fa43;
-                }
-            }
-        }
-        break;
     default:
-        if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
-            s->fb_base = (uint32_t)value;
-            s->guest_configured = true;
-        }
         break;
     }
 }
@@ -343,53 +294,47 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
 void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
 {
     N94DisplayState *s = N94_DISPLAY(dev);
-    s->boot_fb_base = address;
-    s->fb_base = address;
-    s->guest_configured = false;
+    uint32_t *ui0 = &s->storage[PIPE_LAYER_BASE(0) / 4];
 
-    /* S5L8940 CLCD / AppleDisplayPipe default bootloader (iBoot) hardware state:
-     * DPCIRQ (+0x102c): initial status 0.
-     * DPCENAB (+0x1038): LCD enabled (bit 0) and DPU0 enabled (bit 9, 0x200).
-     */
-    s->storage[0x1038 / 4] = 0x00000201;
+    s->boot_fb_base = address;
+    s->fb_base = 0;
+
+    if (address) {
+        /* Use the related S5L8930 model's boot timing defaults until
+         * panel-specific porch values are available. Size is N94's. */
+        s->storage_sub1[0x00 / 4] = 0x4;
+        s->storage_sub1[0x04 / 4] = 0x3;
+        s->storage_sub1[0x14 / 4] = 0x81110001;
+        s->storage_sub1[0x18 / 4] = 0x20408;
+        s->storage_sub1[0x58 / 4] = 9 << 16 | 9 << 8 | 11;
+        s->storage_sub1[0x5c / 4] = 132 << 16 | 132 << 8 | 134;
+        s->storage_sub1[CLCD_ENVID / 4] = 1;
+        s->storage_sub1[CLCD_SIZE / 4] =
+            ((N94_DISPLAY_WIDTH - 1) << 16) | (N94_DISPLAY_HEIGHT - 1);
+        s->storage[0x1030 / 4] = N94_DISPLAY_WIDTH << 16 | N94_DISPLAY_HEIGHT;
+    }
+
+    /* Model the iBoot handoff as a single enabled UI0 layer. */
+    s->storage[PIPE_LAYER_ENABLE / 4] = address ? 0x100 : 0;
     s->storage[0x205c / 4] = 0x00000001;
     s->storage[0x2060 / 4] = 0x00000001;
     s->storage[0x2064 / 4] = 0x00000001;
-    s->storage[0x5040 / 4] = 0x00000000;
-    s->storage[0x5044 / 4] = (640 << 16) | 960;
-    s->storage[0x5048 / 4] = address;
-    s->storage[0x504c / 4] = N94_DISPLAY_STRIDE;
-    s->storage[0x5060 / 4] = 0x00000000;
-    s->storage[0x5070 / 4] = (640 << 16) | 960;
-    s->storage[0x4040 / 4] = 0x00000000;
-    s->storage[0x4044 / 4] = (640 << 16) | 960;
-    s->storage[0x4048 / 4] = address;
-    s->storage[0x404c / 4] = N94_DISPLAY_STRIDE;
-    s->storage[0x4060 / 4] = 0x00000000;
-    s->storage[0x4070 / 4] = (640 << 16) | 960;
-
-    /* Populate the initial boot framebuffer in guest memory with stock iOS 9 lock screen asset */
-    if (address >= S5L8940_RAM_BASE &&
-        address + N94_DISPLAY_FB_SIZE <= S5L8940_RAM_BASE + S5L8940_RAM_SIZE) {
-        uint8_t *fb_buf = g_try_malloc(N94_DISPLAY_FB_SIZE);
-        if (fb_buf) {
-            uLongf dest_len = N94_DISPLAY_FB_SIZE;
-            if (uncompress(fb_buf, &dest_len, n94_lockscreen_zlib,
-                           sizeof(n94_lockscreen_zlib)) == Z_OK &&
-                dest_len == N94_DISPLAY_FB_SIZE) {
-                cpu_physical_memory_write(address, fb_buf, N94_DISPLAY_FB_SIZE);
-            }
-            g_free(fb_buf);
-        }
-    }
+    ui0[PIPE_LAYER_FORMAT / 4] = 1;
+    ui0[PIPE_LAYER_ADDRESS / 4] = address;
+    ui0[PIPE_LAYER_PITCH / 4] = N94_DISPLAY_STRIDE | 2;
+    ui0[PIPE_LAYER_SIZE / 4] = N94_DISPLAY_WIDTH << 16 | N94_DISPLAY_HEIGHT;
 }
 
-/* MMIO Region 1: 0x09200000:0x2000 (Overlay 0 / Subregion 1) */
+/* MMIO Region 1: 0x09200000:0x2000 (CLCD timing generator) */
 static uint64_t n94_display_sub1_read(void *opaque, hwaddr offset, unsigned size)
 {
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
     uint32_t value = s->storage_sub1[word_idx];
+    if (offset == CLCD_ENVID) {
+        /* The ready-down bit follows ENVID independently of stored writes. */
+        value = (value & ~2u) | ((value & 1) ? 0 : 2);
+    }
     n94_display_trace(s->seen_sub1, offset, false, value, "sub1");
     return value;
 }
@@ -399,16 +344,15 @@ static void n94_display_sub1_write(void *opaque, hwaddr offset, uint64_t value, 
     N94DisplayState *s = opaque;
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB1_WORDS;
     n94_display_trace(s->seen_sub1, offset, true, (uint32_t)value, "sub1");
-    s->storage_sub1[word_idx] = (uint32_t)value;
-
-    /* If overlay / window 0 points to a new surface in guest RAM */
-    if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
-        s->fb_base = (uint32_t)value;
-        s->guest_configured = true;
+    if (offset == CLCD_IRQ_STATUS) {
+        s->storage_sub1[word_idx] &= ~(uint32_t)value;
+    } else {
+        s->storage_sub1[word_idx] = (uint32_t)value;
     }
+    n94_clcd_update_irq(s);
 }
 
-/* MMIO Region 2: 0x09300000:0x1000 (Overlay 1 / Subregion 2) */
+/* MMIO Region 2: 0x09300000:0x1000 (CLCD auxiliary registers) */
 static uint64_t n94_display_sub2_read(void *opaque, hwaddr offset, unsigned size)
 {
     N94DisplayState *s = opaque;
@@ -424,12 +368,6 @@ static void n94_display_sub2_write(void *opaque, hwaddr offset, uint64_t value, 
     uint32_t word_idx = (offset / 4) % N94_CLCD_SUB2_WORDS;
     n94_display_trace(s->seen_sub2, offset, true, (uint32_t)value, "sub2");
     s->storage_sub2[word_idx] = (uint32_t)value;
-
-    /* If overlay / window 1 points to a new surface in guest RAM */
-    if (value >= 0x80000000 && value < 0xa0000000 && (value & 0xfff) == 0) {
-        s->fb_base = (uint32_t)value;
-        s->guest_configured = true;
-    }
 }
 
 static const MemoryRegionOps n94_display_ops = {
@@ -506,7 +444,6 @@ static void n94_display_reset(DeviceState *dev)
     s->ctrl = 0;
     s->status = 0;
     s->enabled = false;
-    s->guest_configured = false;
     s->pkt_left = 0;
     s->pkt_off = 0;
     s->swap_id = 0;
