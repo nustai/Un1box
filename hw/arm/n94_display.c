@@ -44,6 +44,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(N94DisplayState, N94_DISPLAY)
 #define PIPE_LAYER_ADDRESS      0x44
 #define PIPE_LAYER_PITCH        0x48
 #define PIPE_LAYER_SIZE         0x60
+#define PIPE_IRQ_VBL            0x001
+#define PIPE_IRQ_SWAP_DONE      0x100
 
 struct N94DisplayState {
     SysBusDevice parent_obj;
@@ -169,18 +171,13 @@ static void n94_vblank_tick(void *opaque)
 {
     N94DisplayState *s = opaque;
 
-    /* S5L8940 CLCD / AppleDisplayPipe:
-     * DPCIRQ (+0x102c):
-     * Bit 0: VBL / frame done (DP_IRQ_VBL, 0x001)
-     * Bit 1: VBLANK completion (0x002)
-     * Bit 8: Swap completed (DP_IRQ_SWAP_DONE, 0x100)
-     */
+    /* The 13G37 driver reports DPCIRQ bit 1 as an underrun. Normal
+     * frame completion only sets VBL and, for a queued frame, swap done. */
+    s->storage[0x102c / 4] |= PIPE_IRQ_VBL;
     if (s->swap_pending) {
         s->storage[0x1048 / 4] = (s->storage[0x1048 / 4] & ~0xffff) | s->swap_id;
-        s->storage[0x102c / 4] |= 0x103; /* VBL (0x1) + VBLANK (0x2) + SWAP_DONE (0x100) */
+        s->storage[0x102c / 4] |= PIPE_IRQ_SWAP_DONE;
         s->swap_pending = false;
-    } else {
-        s->storage[0x102c / 4] |= 0x03; /* VBL (0x1) + VBLANK (0x2) */
     }
 
     /* Level IRQ line 0 (0x2b) asserts for unmasked DisplayPipe events. */

@@ -7,6 +7,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 from n94_cdma_test import connect
 from n94_smoke import bundle
@@ -110,6 +111,16 @@ def run(binary, directory):
                 pixel(0x8fd00000, bytes.fromhex('0000ff00'))
                 assert screenshot()[:3] == bytes.fromhex('ff0000')
                 print('PASS display reset clears registers and restores boot framebuffer', flush=True)
+
+                qtest('writel 0x3a10103c 0x8000005b')
+                qmp('cont')
+                deadline = time.monotonic() + 3
+                while int(qtest('readl 0x3a101048').split()[1], 0) != 0x5b:
+                    assert time.monotonic() < deadline, 'swap did not complete'
+                    time.sleep(0.01)
+                qmp('stop')
+                assert int(qtest('readl 0x3a10102c').split()[1], 0) == 0x101
+                print('PASS frame swap completes without a false underrun interrupt', flush=True)
                 q.write(b'{"execute":"quit"}\n')
                 process.wait(timeout=10)
                 assert process.returncode == 0
