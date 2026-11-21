@@ -190,6 +190,9 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     DeviceState *mipi = qdev_new(TYPE_IPOD_TOUCH_MIPI_DSI);
     IPOD_TOUCH_MIPI_DSI(mipi)->hs_clock_at_reset = true;
     qdev_prop_set_uint32(mipi, "lanes", 4);
+    /* Pinot panel ID from the N94 DeviceTree. */
+    qdev_prop_set_uint32(mipi, "panel-id", 0x0969e5a1);
+    qdev_prop_set_uint32(mipi, "panel-id-len", 4);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(mipi), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(mipi), 0, S5L8940_MIPI_DSIM_BASE);
     sysbus_connect_irq(SYS_BUS_DEVICE(mipi), 0, qdev_get_gpio_in(s->aic, 0x29));

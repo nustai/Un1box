@@ -63,6 +63,9 @@ def run(binary, directory):
                 assert not any(screenshot()), 'boot display contains pixels before any guest writes'
                 assert int(qtest('readl 0x39500000').split()[1], 0) & 0x400
                 assert int(qtest('readl 0x3f110000').split()[1], 0) & 0x100
+                qtest('writel 0x39500034 0xb114')
+                assert int(qtest('readl 0x3950003c').split()[1], 0) == 0x41a
+                assert int(qtest('readl 0x3950003c').split()[1], 0) == 0x0969e5a1
                 assert int(qtest('readl 0x39200050').split()[1], 0) == 1
                 assert int(qtest('readl 0x39200060').split()[1], 0) == 0x027f03bf
                 qtest('writel 0x39200050 0x0')
