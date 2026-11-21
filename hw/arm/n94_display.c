@@ -127,6 +127,9 @@ static void n94_pipe_fifo_write_word(N94DisplayState *s, uint32_t val)
                 if (base >= 0x80000000 && base < 0xa0000000) {
                     s->fb_base = base;
                     s->guest_configured = true;
+                    if (s->storage[0x1028 / 4] == 0) {
+                        s->storage[0x1028 / 4] = 0x0001fa43;
+                    }
                 }
             }
         }
@@ -163,8 +166,9 @@ static void n94_vblank_tick(void *opaque)
         s->storage[0x102c / 4] |= 0x03; /* VBL (0x1) + VBLANK (0x2) */
     }
 
-    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled */
-    if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
+    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled,
+     * but only after guest driver has initialized and configured the hardware. */
+    if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
         qemu_irq_raise(s->vblank_irq[0]);
     }
 
@@ -225,6 +229,10 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
         break;
     case 0x4048: /* DPU1SRCBASE */
         val = s->storage[word_idx] ? s->storage[word_idx] : s->boot_fb_base;
+        s->guest_configured = true;
+        if (s->storage[0x1028 / 4] == 0) {
+            s->storage[0x1028 / 4] = 0x0001fa43;
+        }
         break;
     case 0x404c: /* DPU1SRCPITCH */
         val = s->storage[word_idx] ? s->storage[word_idx] : N94_DISPLAY_STRIDE;
@@ -237,6 +245,10 @@ static uint64_t n94_display_read(void *opaque, hwaddr offset, unsigned size)
         break;
     case 0x5048: /* DPU0SRCBASE */
         val = s->storage[word_idx] ? s->storage[word_idx] : s->boot_fb_base;
+        s->guest_configured = true;
+        if (s->storage[0x1028 / 4] == 0) {
+            s->storage[0x1028 / 4] = 0x0001fa43;
+        }
         break;
     case 0x5040: /* DPU0SRCFMT */
         val = s->storage[word_idx];
@@ -286,7 +298,7 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
         if (value != 0) {
             s->guest_configured = true;
         }
-        if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
+        if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
             qemu_irq_raise(s->vblank_irq[0]);
         } else {
             qemu_irq_lower(s->vblank_irq[0]);
@@ -311,6 +323,9 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
             if (base >= 0x80000000 && base < 0xa0000000) {
                 s->fb_base = base;
                 s->guest_configured = true;
+                if (s->storage[0x1028 / 4] == 0) {
+                    s->storage[0x1028 / 4] = 0x0001fa43;
+                }
             }
         }
         break;
@@ -328,7 +343,7 @@ void n94_display_set_boot_framebuffer(DeviceState *dev, uint32_t address)
     N94DisplayState *s = N94_DISPLAY(dev);
     s->boot_fb_base = address;
     s->fb_base = address;
-    s->guest_configured = true;
+    s->guest_configured = false;
 
     /* S5L8940 CLCD / AppleDisplayPipe default bootloader (iBoot) hardware state:
      * DPCIRQ (+0x102c): initial status 0.
