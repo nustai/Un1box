@@ -103,16 +103,16 @@ def probe(binary, bundle, output, seconds):
                     qtest_command('writel 0x39200050 0x1')
                     qtest_command('writel 0x39200060 0x03c00280')
                     qtest_command('writel 0x3a10102c 0xffffffff')
-                    qtest_command('writel 0x3a101028 0x1fa43')
+                    qtest_command('writel 0x3a101028 0x0')
                     qtest_command('writel 0x3a101038 0x00000201')
                     observed = [qtest_command('readl 0x39200050'), qtest_command('readl 0x39200060'),
                                 qtest_command('readl 0x3a101028'), qtest_command('readl 0x3a101038')]
                     values = [int(reply.split()[1], 0) for reply in observed]
-                    if values != [1, 0x03c00280, 0x1fa43, 0x00000201]:
+                    if values != [1, 0x03c00280, 0, 0x00000201]:
                         raise RuntimeError(f'CLCD diagnostic writes did not read back: {observed}')
                     (output / 'diagnostic-clcd-handoff.json').write_text(json.dumps({
                         'diagnostic_only': True, 'physical_base': '0x39200000',
-                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280', '0x3a101028': '0x1fa43', '0x3a101038': '0x201'},
+                        'assumed_values': {'0x50': '0x1', '0x60': '0x03c00280', '0x3a101028': '0x0', '0x3a101038': '0x201'},
                         'observed': observed}, indent=2))
             if breakpoint_address:
                 debugger = socket.create_connection(('127.0.0.1', gdb_port), timeout=10)

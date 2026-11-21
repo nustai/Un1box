@@ -162,8 +162,9 @@ static void n94_vblank_tick(void *opaque)
         s->storage[0x102c / 4] |= 0x03; /* VBL (0x1) + VBLANK (0x2) */
     }
 
-    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled */
-    if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
+    /* Level IRQ line 0 (0x2b) asserts if any active status bit is enabled,
+     * but only after guest driver has initialized and configured the hardware. */
+    if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
         qemu_irq_raise(s->vblank_irq[0]);
     }
 
@@ -264,7 +265,10 @@ static void n94_display_write(void *opaque, hwaddr offset, uint64_t value, unsig
     }
     if (offset == 0x1028) {
         s->storage[word_idx] = (uint32_t)value;
-        if (s->storage[0x102c / 4] & s->storage[0x1028 / 4]) {
+        if (value != 0) {
+            s->guest_configured = true;
+        }
+        if (s->guest_configured && (s->storage[0x102c / 4] & s->storage[0x1028 / 4])) {
             qemu_irq_raise(s->vblank_irq[0]);
         } else {
             qemu_irq_lower(s->vblank_irq[0]);
