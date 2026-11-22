@@ -115,6 +115,13 @@ static void n94_timer0_expired(void *opaque)
     if (s->timer0_enabled) {
         s->timer0_pending = true;
         s5l8940_aic_update(s);
+        /* Some guest FIQs are acknowledged without a new deadline. Keep
+         * the countdown running as in the A5 timer model. The 1 ms floor
+         * prevents a stale short deadline from monopolizing the vCPU;
+         * freshly programmed deadlines are still scheduled exactly. */
+        uint64_t ticks = MAX(s->timer0_count, 24000U);
+        uint64_t ns = muldiv64(ticks, NANOSECONDS_PER_SECOND, 24000000);
+        timer_mod_ns(s->timer0, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
     }
 }
 
