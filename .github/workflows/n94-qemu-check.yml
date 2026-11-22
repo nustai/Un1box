@@ -62,6 +62,8 @@ jobs:
             's5l8940_dart.c',
             's5l8940_fmi.c',
             's5l8940_iop.c',
+            's5l8940_i2c.c',
+            's5l8940_d1881.c',
             's5l8940_spi.c',
           ))
           """

@@ -19,6 +19,8 @@
 #include "hw/arm/s5l8940_soc.h"
 #include "hw/arm/s5l8940_iop.h"
 #include "hw/arm/s5l8940_spi.h"
+#include "hw/arm/s5l8940_peripherals.h"
+#include "hw/i2c/i2c.h"
 #include "target/arm/cpu.h"
 
 static void s5l8940_soc_init(Object *obj)
@@ -209,6 +211,23 @@ static void s5l8940_soc_realize(DeviceState *dev, Error **errp)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(s->gpio), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(s->gpio), 0, S5L8940_GPIO_BASE);
     sysbus_connect_irq(SYS_BUS_DEVICE(s->gpio), 0, qdev_get_gpio_in(s->aic, 0x77));
+
+    for (unsigned index = 0; index < 3; index++) {
+        DeviceState *controller = qdev_new(TYPE_S5L8940_I2C);
+
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(controller), &error_fatal);
+        sysbus_mmio_map(SYS_BUS_DEVICE(controller), 0, 0x33200000 + index * 0x100000);
+        sysbus_connect_irq(SYS_BUS_DEVICE(controller), 0,
+                           qdev_get_gpio_in(s->aic, 0x12 + index));
+        if (index == 0) {
+            I2CBus *bus = I2C_BUS(qdev_get_child_bus(controller, "i2c"));
+            I2CSlave *pmu = i2c_slave_new(TYPE_S5L8940_D1881, 0x74);
+
+            i2c_slave_realize_and_unref(pmu, bus, &error_fatal);
+            qdev_connect_gpio_out(DEVICE(pmu), 0,
+                                  qemu_irq_invert(qdev_get_gpio_in(s->gpio, 0x0d)));
+        }
+    }
 
     DeviceState *i2s_switch = qdev_new("n94-i2s-switch");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(i2s_switch), &error_fatal);
