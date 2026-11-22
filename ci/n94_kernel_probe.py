@@ -6,12 +6,14 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import socket
 import subprocess
+import tempfile
 import time
 
 
-def probe(binary, bundle, output, seconds):
+def probe(binary, bundle, output, seconds, nand=None):
     output.mkdir(parents=True, exist_ok=True)
     serial, log = output / "uart.log", output / "qemu.log"
     with socket.socket() as reservation:
@@ -34,11 +36,9 @@ def probe(binary, bundle, output, seconds):
         log_flags = 'in_asm,guest_errors,unimp'
     else:
         log_flags = 'in_asm,guest_errors,unimp' if breakpoint_address else 'in_asm,int,guest_errors,unimp'
-    machine_opt = f"n94,kboot={bundle}"
-    for candidate_nand in ("n94-rootfs.raw", "n94-rootfs-out/n94-rootfs.raw"):
-        if pathlib.Path(candidate_nand).exists():
-            machine_opt += f",nand={pathlib.Path(candidate_nand).resolve()}"
-            break
+    machine_opt = f"n94,kboot={str(bundle).replace(',', ',,')}"
+    if nand is not None:
+        machine_opt += f",nand={str(nand).replace(',', ',,')}"
     command = [str(binary), "-M", machine_opt, "-S", "-display", "none",
                "-monitor", "none", "-serial", f"file:{serial}", "-no-reboot",
                "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off", "-d", log_flags, "-D", str(log)]
@@ -50,7 +50,6 @@ def probe(binary, bundle, output, seconds):
     snapshots = []
     failure = None
     breakpoint_hit = False
-    ios_boot_confirmed = False
     with (output / "stderr.log").open("w+") as errors:
         process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
         connection = None
@@ -273,49 +272,12 @@ def probe(binary, bundle, output, seconds):
                         qmp('human-monitor-command', {'command-line': 'sendkey h 150'})
                     except Exception:
                         pass
-                if sample > 15 or sample % 2 == 0:
+                if sample % 10 == 0:
                     try:
-                        qmp('screendump', {'filename': str((output / 'screen.ppm').resolve())})
-                        screen_path = output / 'screen.ppm'
-                        if screen_path.exists():
-                            with open(screen_path, 'rb') as f_ppm:
-                                ppm_bytes = f_ppm.read()
-                            h_end = ppm_bytes.find(b'\n', ppm_bytes.find(b'255') + 3) + 1
-                            pix = ppm_bytes[h_end:]
-                            num_colors = len(set(pix[i:i+3] for i in range(0, len(pix), 12)))
-                            top_pix = pix[:921600]
-                            bot_pix = pix[921600:]
-                            top_colors = len(set(top_pix[i:i+3] for i in range(0, len(top_pix), 12) if top_pix[i:i+3] != b'\x00\x00\x00'))
-                            bot_colors = len(set(bot_pix[i:i+3] for i in range(0, len(bot_pix), 12) if bot_pix[i:i+3] != b'\x00\x00\x00'))
-                            if num_colors > 256:
-                                ios_boot_confirmed = True
-                            if sample % 10 == 0 or num_colors > 256:
-                                print(f"Sample {sample}: colors={num_colors} (top={top_colors}, bot={bot_colors})", flush=True)
-                            if sample >= 30 and top_colors > 30 and bot_colors > 30 and num_colors > 200:
-                                print(f"Lock screen UI fully rendered! Detected {num_colors} distinct colors across full display (top={top_colors}, bot={bot_colors}). Exiting probe.", flush=True)
-                                ios_boot_confirmed = True
-                                framebuffer = (output / 'boot-framebuffer.raw').resolve()
-                                qmp('human-monitor-command', {'command-line':
-                                             f'pmemsave 0x8fd00000 0x258000 "{framebuffer}"'})
-                                try:
-                                    cur_fb = 0
-                                    for reg in ('0x3a100010', '0x3a104044', '0x3a104048', '0x3a105044', '0x3a105048'):
-                                        fb_val = qmp('human-monitor-command', {'command-line': f'xp /1wx {reg}'})
-                                        m_fb = re.search(r'0x([0-9a-fA-F]+)', fb_val.split(':')[-1] if ':' in fb_val else '')
-                                        if m_fb:
-                                            cand_fb = int(m_fb.group(1), 16)
-                                            if 0x80000000 <= cand_fb < 0xa0000000 and cand_fb != 0x8fd00000:
-                                                cur_fb = cand_fb
-                                                break
-                                    if cur_fb:
-                                        qmp('human-monitor-command', {'command-line':
-                                                     f'pmemsave 0x{cur_fb:x} 0x258000 "{(output / "active-framebuffer.raw").resolve()}"'})
-                                except Exception:
-                                    pass
-                                (output / "registers.json").write_text(json.dumps(snapshots, indent=2))
-                                break
-                    except Exception:
-                        pass
+                        target = (output / f"frame-{sample:04d}.ppm").resolve()
+                        qmp("screendump", {"filename": str(target)})
+                    except RuntimeError as error:
+                        (output / "screen-error.txt").write_text(str(error) + "\n")
                 if log.exists() and log.stat().st_size > 256 << 20:
                     break
                 if serial.exists() and b"panic(" in serial.read_bytes():
@@ -444,7 +406,7 @@ def probe(binary, bundle, output, seconds):
     summary = {"diagnostic_only": True, "bundle": bundle.name, "exit_code": process.returncode,
                "samples": len(snapshots), "untrimmed_log_bytes": log_size,
                "uart_bytes": serial.stat().st_size if serial.exists() else 0,
-               "ios_boot_confirmed": ios_boot_confirmed, "probe_error": failure}
+               "ios_boot_confirmed": False, "probe_error": failure}
     (output / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary), flush=True)
     if snapshots:
@@ -461,12 +423,30 @@ def main():
     parser.add_argument("images", type=pathlib.Path)
     parser.add_argument("output", type=pathlib.Path)
     parser.add_argument("--seconds", type=int, default=60)
+    parser.add_argument("--nand", type=pathlib.Path,
+                        help="prepared system volume to copy before each candidate boot")
     args = parser.parse_args()
+    nand = args.nand
+    if nand is None:
+        nand = next((pathlib.Path(path) for path in
+                     ("n94-rootfs.raw", "n94-rootfs-out/n94-rootfs.raw")
+                     if pathlib.Path(path).is_file()), None)
+    if nand is not None and not nand.is_file():
+        parser.error(f"NAND image does not exist: {nand}")
     target_version = os.environ.get('N94_BOOTARGS_VERSION')
     versions = (int(target_version),) if target_version in ('2', '3') else (2, 3)
     for version in versions:
-        probe(args.binary.resolve(), (args.images / f"n94-v{version}.kboot").resolve(),
-              args.output / f"bootargs-v{version}", min(max(args.seconds, 1), 1800))
+        bundle = (args.images / f"n94-v{version}.kboot").resolve()
+        output = args.output / f"bootargs-v{version}"
+        seconds = min(max(args.seconds, 1), 1800)
+        if nand is None:
+            probe(args.binary.resolve(), bundle, output, seconds)
+            continue
+        args.output.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".nand-", dir=args.output) as temporary:
+            working_nand = (pathlib.Path(temporary) / "system.raw").resolve()
+            shutil.copyfile(nand, working_nand)
+            probe(args.binary.resolve(), bundle, output, seconds, working_nand)
 
 
 if __name__ == "__main__":
