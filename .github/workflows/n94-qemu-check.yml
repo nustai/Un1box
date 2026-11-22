@@ -98,6 +98,9 @@ jobs:
       - name: Execute ARM payload on both n94 machine names and test reset
         run: python3 ci/n94_smoke.py qemu_src/build/qemu-system-arm
 
+      - name: Verify n94 I2C and PMU transactions
+        run: python3 ci/n94_i2c_test.py qemu_src/build/qemu-system-arm
+
       - name: Verify CDMA scatter-gather data and IRQ signals against real devices
         run: python3 ci/n94_cdma_test.py qemu_src/build/qemu-system-arm
 
